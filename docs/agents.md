@@ -2,10 +2,54 @@
 
 These instructions do not replace or restart the existing agents automatically.
 First confirm Pi identities, controller health, and that the selected device
-has no job in progress. The two restored Pis originally shared a controller
-UUID; retain the first controller and finish validating the fresh second
-controller before deploying independent agents. Renaming a hostname alone
-does not resolve cloned controller identities.
+has no job in progress. The restored Pis shared a controller UUID. On
+2026-10-30, the user authorized removal of Pi 2's cloned controller and models;
+its replacement is `hilaas-pi2`. Pi 1 retains `localhost-controller`.
+Renaming a hostname alone does not resolve cloned controller identities.
+
+## Registered-device deployment configuration
+
+Pi 1 is `bem22@10.146.21.22`; Pi 2 is `bem22@10.146.21.243`.
+Both run Ubuntu 24.04 ARM64. The agent-host charm artifact targets Ubuntu
+22.04 ARM64 guests. Deploy one application and guest per row, with the
+corresponding `agent/live/<directory>` as `config-dir`:
+
+| Directory | Agent ID | Queue | Observed device identity |
+| --- | --- | --- | --- |
+| pi1-c6 | hilaas-pi1-c6 | hilaas-esp32c6-pi1 | ESP32-C6, base MAC f0:f5:bd:01:83:1c, native USB Serial/JTAG |
+| pi1-microbit | hilaas-pi1-microbit | hilaas-microbit-pi1 | micro:bit CMSIS-DAP, serial 9906360200052820e6a4fc0d0218ebb9000000006e052820 |
+| pi1-nucleo | hilaas-pi1-nucleo | hilaas-nucleo-pi1 | STLINK-V3, serial 000F00304142500720353451; user-confirmed NUCLEO-H753ZI |
+| pi2-esp32 | hilaas-pi2-esp32 | hilaas-esp32-pi2 | ESP32-D0WD-V3, MAC 08:3a:8d:14:8e:28; CP2102N serial 54cc2b064155ed119c7d93131d62bc44 |
+| pi2-c3 | hilaas-pi2-c3 | hilaas-esp32c3-pi2 | ESP32-C3, MAC 70:af:09:57:bf:38; CP2102N serial de2a2a9800bff0118a94bf7948e9de0f |
+
+The chip probes read identity and reset the Espressif boards without writing
+flash. The C6 connection is not the UART bridge required by the existing
+hardware adapter below. Do not enable that adapter merely because the chip
+model matches.
+
+These live configurations are **registration only**: setup, provision, and
+test commands are `/bin/false`. Submitted commands are not executed. No
+firmware execution, USB passthrough, or hardware validation is implied by an
+agent appearing online. Board-specific adapters must be reviewed separately.
+
+`scripts/register-pi-agents.py` runs inside the AWS server workload. Its
+`--check` mode is read-only. Registration accepts the `client-id` and
+`secret-key` JSON fields on stdin, creates the `testflinger-agent` login with
+agent role and exactly these five queues, and restricts those queues. It
+refuses existing accounts or restrictions rather than replacing them. It
+does not manufacture agent heartbeat records or grant contributor access.
+
+Each guest needs its own root-readable SSH tunnel key and the pinned AWS host
+key at `/etc/hilaas/known_hosts`. Install the service from
+`config/pi-agents/hilaas-api-tunnel.service`; it binds only guest loopback and
+forwards to the private API over SSH. Limit each public key on AWS to API port
+forwarding; do not copy the AWS administrator private key into the guests.
+The public browser OAuth endpoint is not an agent API endpoint.
+
+Grant the credentials through a model-owned Juju secret, never Git. Start the
+tunnel before authentication. Once authentication succeeds, restart an idle
+agent if it cached a failed initial token refresh. Verify real heartbeat
+records and restricted queue ownership, not only Supervisor or Juju status.
 
 ## Prepare one ESP32-C6 agent
 
