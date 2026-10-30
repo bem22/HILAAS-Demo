@@ -1,15 +1,29 @@
 # Two-Test Firmware Demo
 
-Status: ESP32-C6 is the selected demo target; a complete hardware pass is still
-pending. GitHub Actions run `41092675994` built successfully, but its CRC32 job
-`02f2234d-4a72-49c3-b344-f9fbb6911521` stopped at the MAC probe before any flash
-write. The native-USB reset selection has been corrected and a MAC-only probe
-matched the approved board. Parsing now distinguishes its six-byte base MAC
-from its eight-byte MAC display. The second test was not submitted.
+Status: ESP32-C6 is the verified firmware demo target. Both tests passed through
+the complete pipeline in [run 41094006781, attempt 1](https://github.com/bem22/HILAAS-Demo/actions/runs/41094006781/attempts/1),
+using source commit `f6b6df934d1f8688fdd1d199faddc1d455a559b9`.
 
-The earlier run `41091669386` built successfully but stopped in worker
-preparation before submitting any hardware job; its Python-path mismatch has
-also been corrected.
+| Test | Result | Testflinger Job |
+| --- | --- | --- |
+| `crc32` | PASS | `bf4bc7ca-1241-4079-bbf2-a5c0f39aeb85` |
+| `uint32-wrap` | PASS | `2028759c-71a8-4ebc-98fb-71d4945f3561` |
+
+Each job flashed once, verified the image, and passed setup, test, and cleanup.
+Both used the approved board MAC `f0:f5:bd:01:83:1c` and the same freshly built
+firmware. The C6 agent returned to `waiting` after both jobs.
+
+A later attempt 2 was blocked by the anti-reflash guard, so the run's latest
+status is failure; select attempt 1 for the successful demo. Its artifact was
+published successfully, but that original artifact now returns HTTP 404.
+The original Testflinger jobs retain their phase results and evidence archives.
+Both archives were recovered and independently revalidated locally under
+`artifacts/github-41094006781-recovered/`, with one directory per test.
+
+Earlier verification runs exposed and fixed a worker Python-path mismatch
+(`41091669386`) and native-USB reset selection (`41092675994`). Neither wrote
+firmware. The adapter explicitly selects USB reset and matches complete
+six-byte base MAC lines instead of prefixes of the C6's eight-byte MAC display.
 
 The first hardware target is the ESP32-C6 on Pi 1, connected through its native
 USB Serial/JTAG port. Firmware runs two tests from `firmware/common/selftest.c`:

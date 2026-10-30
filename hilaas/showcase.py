@@ -34,13 +34,13 @@ flowchart LR
 | --- | --- |
 | GitHub -> AWS runner | Check out the exact dispatched commit; manual dispatch only |
 | Runner -> Spread -> Workshop | Select the target SDK and build recipe; native builds run CTest, MCU builds produce firmware |
-| Workshop -> Spread worker | Validate the target bundle and manifest; Workshop runs on the host for native builds and in the worker for the current MCU path |
+| Workshop -> Spread worker | Validate the target bundle and manifest; native and ESP32-C6 builds use host Workshop, then transfer their bundles to the worker |
 | Worker -> Testflinger | Check the dedicated queue, submit once, and upload the binary attachments |
 | Testflinger -> target adapter | Native: sandboxed execution. MCU: device identity, flash policy, one write, verification, and runtime proof |
 | Target -> Testflinger -> Spread -> GitHub | Return phase results, verify target-specific evidence, and publish artifacts |
 
 Only the selected target and mode are exercised. Build-only mode never submits a hardware job.
-The laptop is the verified native reference target; ESP32-C6 hardware integration remains unverified.
+The laptop is the native reference target; ESP32-C6 is the firmware demo target. This run's execution status is established by its verified evidence below.
 micro:bit V2 and NUCLEO-H753ZI support preliminary builds only; their hardware adapters remain disabled.
 Offline failure scenarios and the proposed device registry are not live hardware evidence.
 """
