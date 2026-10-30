@@ -13,6 +13,7 @@ from pathlib import Path
 from hilaas.bundle import read_json, require
 from hilaas.client import save
 from hilaas.native import BINARY, MANIFEST, validate as validate_native
+from hilaas.progress import tracked
 
 
 def lxc(*arguments, input_text=None, check=True):
@@ -31,6 +32,7 @@ def lease_path():
     return state / f"worker-{run_id}.json"
 
 
+@tracked("worker.discard")
 def discard(path):
     if not path.exists():
         return
@@ -49,6 +51,7 @@ def discard(path):
     path.unlink()
 
 
+@tracked("worker.allocate")
 def allocate(path):
     mock = os.environ.get("HILAAS_MODE") == "mock"
     fingerprint = os.environ.get("HILAAS_MOCK_WORKER_IMAGE" if mock else "HILAAS_WORKER_IMAGE", "")
@@ -87,6 +90,12 @@ def allocate(path):
             options = ["-c", "security.nesting=false", "-c", "security.privileged=false", "-c", "limits.memory=512MiB"]
         lxc("init", fingerprint, name, *options, "-c", "limits.cpu=2",
             "-c", "user.hilaas-owner=" + owner)
+        if os.environ.get("HILAAS_PROGRESS_DIR"):
+            progress = Path(os.environ["HILAAS_PROGRESS_DIR"]).resolve(strict=True) / "worker"
+            require(progress.is_dir() and not progress.is_symlink(), "Missing dedicated progress directory")
+            mount_options = ["shift=true"] if worker_type == "container" else []
+            lxc("config", "device", "add", name, "hilaas-progress", "disk", "source=" + str(progress),
+                "path=/var/lib/hilaas-progress", *mount_options)
         if mock:
             ledger = path.parent / "mock-submissions"
             ledger.mkdir(mode=0o700, exist_ok=True)

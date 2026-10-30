@@ -15,7 +15,8 @@ mkdir -p "$HOME/.local/state/HILAAS-Demo"
 exec 9>"$HOME/.local/state/HILAAS-Demo/mock-spread.lock"
 flock -n 9 || { printf 'Another mock Spread run is active\n' >&2; exit 1; }
 status=0
-spread -artifacts "artifacts/$HILAAS_RUN_ID" mock-container:ubuntu-24.04:spread/mock:laptop || status=$?
+python3 -m hilaas.progress run --target laptop --output "artifacts/$HILAAS_RUN_ID/progress" -- \
+	spread -artifacts "artifacts/$HILAAS_RUN_ID" mock-container:ubuntu-24.04:spread/mock:laptop || status=$?
 results="artifacts/$HILAAS_RUN_ID/mock-container:ubuntu-24.04:spread/mock:laptop/results"
 if [[ -d "$results" ]]; then
 	mkdir -p "artifacts/$HILAAS_RUN_ID/laptop"

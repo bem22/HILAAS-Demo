@@ -10,6 +10,7 @@ from pathlib import Path
 
 from hilaas.bundle import read_json, require
 from hilaas.client import save
+from hilaas.progress import stage
 
 
 BINARY = "hilaas-selftest"
@@ -62,10 +63,10 @@ def build(source, output, project, commit, run_id):
     command = ["workshop", "-p", str(project)]
     launched = False
     try:
-        with (output / "workshop-launch.log").open("w") as log:
+        with stage("workshop.launch"), (output / "workshop-launch.log").open("w") as log:
             subprocess.run([*command, "launch"], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
         launched = True
-        with (output / "workshop-build.log").open("w") as log:
+        with stage("workshop.build"), (output / "workshop-build.log").open("w") as log:
             subprocess.run([*command, "run", "--non-interactive", "--timeout", "10m",
                             "--env", "HILAAS_COMMIT=" + commit,
                             "--env", "HILAAS_RUN_ID=" + run_id,
@@ -80,12 +81,13 @@ def build(source, output, project, commit, run_id):
         bundle.mkdir()
         shutil.copyfile(binary, bundle / BINARY)
         save(bundle / MANIFEST, manifest)
-        validate(bundle)
+        with stage("bundle.validate"):
+            validate(bundle)
         print("Workshop build passed; binary SHA-256 " + manifest["binary_sha256"], flush=True)
         return manifest
     finally:
         if launched:
-            with (output / "workshop-stop.log").open("w") as log:
+            with stage("workshop.stop"), (output / "workshop-stop.log").open("w") as log:
                 subprocess.run([*command, "stop"], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=120)
 
 

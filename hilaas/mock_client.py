@@ -15,6 +15,7 @@ from hilaas.bundle import read_json, require, unique_keys
 from hilaas.client import attachment_archive, save
 from hilaas.mock_agent import QUEUE, TOKEN
 from hilaas.native import BINARY, MANIFEST, TOKEN as NATIVE_TOKEN, validate as validate_native, verify_output
+from hilaas.progress import stage
 
 
 SUBMITTER = "hilaas-laptop-mock-submitter"
@@ -92,13 +93,14 @@ def execute(api, run_id, output, ledger_dir, timeout=180, clock=time.monotonic, 
     ledger_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     ledger = ledger_dir / (run_id + "-mock.json")
     require(not ledger.exists(), "Mock submission already attempted; inspect the existing receipt")
-    restriction = api.get_json("/v1/restricted-queues/" + QUEUE)
-    require(restriction and set(restriction.get("owners", [])) == {SUBMITTER, AGENT_CLIENT}, "Mock queue has unexpected owners")
-    agent = api.get_json("/v1/agents/data/" + QUEUE)
-    require(agent and agent.get("state") == "waiting" and not agent.get("job")
-            and agent.get("queues") == [QUEUE], "Expected an idle dedicated laptop mock")
-    jobs = api.get_json("/v1/queues/" + QUEUE + "/jobs") or []
-    require(not any(job.get("job_state") not in ("complete", "cancelled") for job in jobs), "Mock queue has outstanding work")
+    with stage("testflinger.preflight"):
+        restriction = api.get_json("/v1/restricted-queues/" + QUEUE)
+        require(restriction and set(restriction.get("owners", [])) == {SUBMITTER, AGENT_CLIENT}, "Mock queue has unexpected owners")
+        agent = api.get_json("/v1/agents/data/" + QUEUE)
+        require(agent and agent.get("state") == "waiting" and not agent.get("job")
+                and agent.get("queues") == [QUEUE], "Expected an idle dedicated laptop mock")
+        jobs = api.get_json("/v1/queues/" + QUEUE + "/jobs") or []
+        require(not any(job.get("job_state") not in ("complete", "cancelled") for job in jobs), "Mock queue has outstanding work")
     receipt = {"kind": "mock", "job_id": str(uuid.uuid4()), "run_id": run_id,
                "nonce": secrets.token_hex(16), "stage": "submission_intent", "status": "pending"}
     if manifest is not None:
@@ -115,34 +117,38 @@ def execute(api, run_id, output, ledger_dir, timeout=180, clock=time.monotonic, 
         job["test_data"] = {"test_cmds": NATIVE_TOKEN, "attachments": [{"agent": BINARY}, {"agent": MANIFEST}]}
     save(output / "receipt.json", receipt)
     try:
-        response = api.request("POST", "/v1/job", json=job).json()
-        require(response.get("job_id") == receipt["job_id"], "Server changed mock job ID")
+        with stage("testflinger.submit"):
+            response = api.request("POST", "/v1/job", json=job).json()
+            require(response.get("job_id") == receipt["job_id"], "Server changed mock job ID")
         if captured is not None:
             receipt["stage"] = "attachments"
             save(output / "receipt.json", receipt)
-            api.request("POST", "/v1/job/" + receipt["job_id"] + "/attachments",
-                        files={"file": ("native.tar.gz", attachment_archive(captured), "application/gzip")})
+            with stage("testflinger.attachments"):
+                api.request("POST", "/v1/job/" + receipt["job_id"] + "/attachments",
+                            files={"file": ("native.tar.gz", attachment_archive(captured), "application/gzip")})
         print("Submitted mock job " + receipt["job_id"], flush=True)
         receipt["stage"] = "waiting"
-        deadline = clock() + timeout
-        while True:
-            results = api.get_json("/v1/result/" + receipt["job_id"])
-            save(output / "phase-results.json", results)
-            if results.get("job_state") in ("complete", "cancelled"):
-                break
-            if clock() >= deadline:
-                raise TimeoutError("Mock still pending; no automatic resubmission or cancellation")
-            wait(2)
+        with stage("testflinger.wait"):
+            deadline = clock() + timeout
+            while True:
+                results = api.get_json("/v1/result/" + receipt["job_id"])
+                save(output / "phase-results.json", results)
+                if results.get("job_state") in ("complete", "cancelled"):
+                    break
+                if clock() >= deadline:
+                    raise TimeoutError("Mock still pending; no automatic resubmission or cancellation")
+                wait(2)
         receipt["stage"] = "evidence"
         path = output / "artifacts.tar.gz"
-        with api.request("GET", "/v1/result/" + receipt["job_id"] + "/artifact", stream=True) as response:
-            size = 0
-            with path.open("wb") as stream:
-                for chunk in response.iter_content(65536):
-                    size += len(chunk)
-                    require(size <= 2**20, "Mock evidence archive too large")
-                    stream.write(chunk)
-        proof = verify_evidence(path, results, receipt)
+        with stage("testflinger.evidence"):
+            with api.request("GET", "/v1/result/" + receipt["job_id"] + "/artifact", stream=True) as response:
+                size = 0
+                with path.open("wb") as stream:
+                    for chunk in response.iter_content(65536):
+                        size += len(chunk)
+                        require(size <= 2**20, "Mock evidence archive too large")
+                        stream.write(chunk)
+            proof = verify_evidence(path, results, receipt)
         save(output / "mock-result.json", proof)
         receipt.update(stage="complete", status="pass")
         return receipt

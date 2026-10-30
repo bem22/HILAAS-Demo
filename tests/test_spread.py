@@ -1,7 +1,10 @@
+from contextlib import redirect_stdout
+import io
 import json
 import os
 import runpy
 import subprocess
+import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as element_tree
@@ -10,13 +13,54 @@ from unittest.mock import Mock, patch
 
 import yaml
 
-from hilaas import showcase, worker
+from hilaas import progress, showcase, worker
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class SpreadTests(unittest.TestCase):
+    def test_generic_stage_events_preserve_failure_and_target_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for target in ("laptop", "esp32c6-devkitc-1"):
+                with patch.dict(os.environ, HILAAS_PROGRESS_DIR=directory, HILAAS_RUN_ID="run-1", HILAAS_TARGET=target):
+                    with progress.stage("workshop.build"):
+                        pass
+                    with self.assertRaises(TimeoutError), progress.stage("testflinger.submit"):
+                        raise TimeoutError("private detail must not be logged")
+                recorded = progress.events(root, "run-1", target)
+                self.assertEqual(len(recorded), 4)
+                self.assertEqual([event["status"] for event in recorded], ["running", "passed", "running", "failed"])
+                self.assertNotIn("private detail", json.dumps(recorded))
+                self.assertIn("failed", progress.table(root, "run-1", target))
+            self.assertEqual(progress.events(root, "other-run", "laptop"), [])
+
+    def test_progress_runner_preserves_command_exit_status(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, HILAAS_RUN_ID="run-1"):
+            result = progress.run(["/bin/false"], Path(directory) / "progress", "laptop")
+            self.assertEqual(result, 1)
+            self.assertIn("unobserved", progress.table(Path(directory) / "progress", "run-1", "laptop"))
+
+    def test_progress_runner_streams_real_subprocess_events(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, HILAAS_RUN_ID="run-1"):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                result = progress.run([sys.executable, "-m", "hilaas.progress", "step", "workshop.build", "--", "/bin/true"],
+                                      Path(directory) / "progress", "esp32c6-devkitc-1")
+            self.assertEqual(result, 0)
+            self.assertIn("::group::[esp32c6-devkitc-1] Workshop build and build-time tests: running", output.getvalue())
+            self.assertIn("tests: passed", output.getvalue())
+            self.assertEqual(output.getvalue().count("::endgroup::"), 2)
+
+    def test_progress_io_failure_does_not_repeat_or_mask_operation(self):
+        with patch.dict(os.environ, HILAAS_PROGRESS_DIR="unwritable", HILAAS_RUN_ID="run-1", HILAAS_TARGET="laptop"):
+            with patch("pathlib.Path.mkdir", side_effect=PermissionError), patch("sys.stderr", new_callable=io.StringIO):
+                operation = Mock(side_effect=TimeoutError)
+                with self.assertRaises(TimeoutError), progress.stage("testflinger.submit"):
+                    operation()
+                operation.assert_called_once()
+
     def test_laptop_service_checks_tunnel_readiness_before_start(self):
         provisioner = runpy.run_path(str(ROOT / "scripts/provision-laptop-mock.py"))
         with tempfile.TemporaryDirectory() as directory:
@@ -64,6 +108,10 @@ class SpreadTests(unittest.TestCase):
         workflow = yaml.safe_load((ROOT / ".github/workflows/mock.yml").read_text())
         self.assertEqual(set(workflow.get("on", workflow.get(True))), {"workflow_dispatch"})
         job = workflow["jobs"]["mock"]
+        inputs = workflow.get("on", workflow.get(True))["workflow_dispatch"]["inputs"]
+        self.assertEqual(inputs["target"]["options"], ["laptop", "esp32c6-devkitc-1"])
+        self.assertEqual(inputs["target"]["default"], "laptop")
+        self.assertFalse(inputs["flash_and_test"]["default"])
         self.assertIn("refs/heads/main", job["if"])
         self.assertIn("hilaas-demo", job["runs-on"])
         self.assertNotIn("strategy", job)
@@ -98,7 +146,7 @@ class SpreadTests(unittest.TestCase):
         proof = {"job_id": "test-job", "agent": "hilaas-laptop-mock", "checks": 5, "exit_code": 0}
         with (
             patch.object(showcase, "validate", return_value=(manifest, {})),
-            patch.object(showcase, "read_json", side_effect=lambda path: receipt if path.name == "receipt.json" else {}),
+            patch.object(showcase, "read_json", side_effect=lambda path: json.loads(path.read_text()) if path.name == "targets.json" else receipt if path.name == "receipt.json" else {}),
             patch.object(showcase, "verify_evidence", return_value=proof) as verify,
         ):
             text, passed = showcase.report(Path("unused"), "run", "a" * 40, "success")
@@ -118,12 +166,16 @@ class SpreadTests(unittest.TestCase):
         mock = yaml.safe_load((ROOT / "spread/mock/task.yaml").read_text())
         boards = yaml.safe_load((ROOT / "spread/boards/task.yaml").read_text())
         self.assertIn("mock-container", project["backends"])
+        self.assertNotIn("HILAAS_PROGRESS_DIR", project["environment"])
+        for task in (mock, boards):
+            for phase in ("prepare", "execute"):
+                self.assertIn("export HILAAS_PROGRESS_DIR=/var/lib/hilaas-progress", task[phase])
         allocation = project["backends"]["mock-container"]["allocate"]
         self.assertLess(allocation.index("python3 -m hilaas.native"), allocation.index("python3 -m hilaas.worker allocate"))
         self.assertIn("--bundle /opt/hilaas-native", mock["execute"])
         self.assertEqual(mock["backends"], ["mock-container"])
         self.assertEqual(boards["backends"], ["local-vm"])
-        self.assertEqual(mock["environment"], {"HILAAS_TARGET/laptop": "hilaas-laptop-mock"})
+        self.assertEqual(mock["environment"], {"HILAAS_TARGET/laptop": "laptop"})
         self.assertIn("python3 -m pytest tests/test_mock.py", mock["prepare"])
         self.assertNotIn("workshop", mock["execute"])
 
@@ -131,6 +183,7 @@ class SpreadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
                 "HILAAS_MOCK_WORKER_IMAGE": "c" * 64, "SPREAD_PASSWORD": "test-only", "HILAAS_MODE": "mock"}), patch.object(worker, "lxc") as process:
             root = Path(directory)
+            (root / "progress/worker").mkdir(parents=True)
             token = root / "submitter.json"
             token.write_text(json.dumps({"client_id": "hilaas-laptop-mock-submitter"}))
             path = root / "lease.json"
@@ -147,7 +200,8 @@ class SpreadTests(unittest.TestCase):
                     value = json.dumps([{"name": lease["name"], "status": "Stopped", "config": {"user.hilaas-owner": lease["owner"]}}])
                 return Mock(stdout=value, returncode=0)
             process.side_effect = response
-            with patch.dict(os.environ, {"HILAAS_MOCK_TOKEN_FILE": str(token)}):
+            with patch.dict(os.environ, {"HILAAS_MOCK_TOKEN_FILE": str(token), "HILAAS_PROGRESS_DIR": str(root / "progress"),
+                                         "HILAAS_RUN_ID": "run-1", "HILAAS_TARGET": "laptop"}):
                 worker.allocate(path)
             initialization = process.call_args_list[1].args
             self.assertIn("security.nesting=false", initialization)
@@ -155,6 +209,10 @@ class SpreadTests(unittest.TestCase):
             pushes = [call.args for call in process.call_args_list if call.args[0] == "file"]
             self.assertEqual(len(pushes), 1)
             self.assertIn(str(token), pushes[0])
+            mounts = [call.args for call in process.call_args_list if call.args[:3] == ("config", "device", "add")]
+            progress_mount = next(mount for mount in mounts if "hilaas-progress" in mount)
+            self.assertIn("source=" + str(root / "progress/worker"), progress_mount)
+            self.assertIn("path=/var/lib/hilaas-progress", progress_mount)
             worker.discard(path)
 
     def test_browser_access_requires_explicit_github_user(self):
@@ -211,13 +269,15 @@ class SpreadTests(unittest.TestCase):
         task = yaml.safe_load((ROOT / "spread/boards/task.yaml").read_text())
         self.assertEqual(task["environment"], {"HILAAS_TARGET/esp32c6": "esp32c6-devkitc-1"})
         targets = json.loads((ROOT / "targets.json").read_text())
-        self.assertEqual([name for name, target in targets.items() if target["enabled"]], ["esp32c6-devkitc-1"])
+        self.assertEqual([name for name, target in targets.items() if target["enabled"] and target.get("kind") == "mcu"], ["esp32c6-devkitc-1"])
+        self.assertEqual(targets["laptop"]["adapter"], "native")
 
     def test_workflow_has_no_pr_trigger_or_duplicate_matrix(self):
-        workflow = yaml.safe_load((ROOT / ".github/workflows/demo.yml").read_text())
+        self.assertFalse((ROOT / ".github/workflows/demo.yml").exists())
+        workflow = yaml.safe_load((ROOT / ".github/workflows/mock.yml").read_text())
         triggers = workflow.get("on", workflow.get(True))
         self.assertEqual(set(triggers), {"workflow_dispatch"})
-        self.assertNotIn("strategy", workflow["jobs"]["spread"])
+        self.assertNotIn("strategy", workflow["jobs"]["mock"])
         self.assertFalse(triggers["workflow_dispatch"]["inputs"]["flash_and_test"]["default"])
 
     def test_no_cached_image_no_vm_mutation(self):

@@ -1,25 +1,31 @@
-"""Publish the native pipeline topology and independently verified run evidence."""
+"""Publish target-neutral topology with target-specific evidence verification."""
 
 import argparse
 import os
 from pathlib import Path
 
 from hilaas.bundle import read_json, require
+from hilaas.bundle import digest, validate as validate_firmware
+from hilaas.client import validate_config, verify_evidence as verify_firmware_evidence
 from hilaas.mock_client import verify_evidence
 from hilaas.native import validate
+from hilaas.progress import table
 
 
-ARCHITECTURE = """## Architecture: Source to Laptop
+ARCHITECTURE = """## Architecture: Source to Target
 
 ```mermaid
 flowchart LR
     GitHub[GitHub: exact source commit] --> Runner[AWS self-hosted runner]
     Runner --> Spread[Spread: orchestration]
-    Spread --> Workshop[Workshop: isolated native build and CTest]
-    Workshop --> Worker[Spread worker: binary and manifest]
+    Spread --> Workshop[Workshop: target SDK, build and build-time tests]
+    Workshop --> Worker[Spread worker: target bundle and manifest]
     Worker --> TF[Testflinger: restricted queue and attachments]
-    TF --> Laptop[Laptop agent: sandboxed binary execution]
-    Laptop --> Evidence[Testflinger: phase results and execution proof]
+    TF --> Agent[Testflinger agent: target-specific adapter]
+    Agent --> Native[Laptop target: sandboxed native execution]
+    Agent --> MCU[MCU target: identity check, flash, verify, runtime test]
+    Native --> Evidence[Testflinger: phase results and target proof]
+    MCU --> Evidence
     Evidence --> Verify[Spread client: evidence verification]
     Verify --> Artifacts[GitHub: independent verification and artifacts]
 ```
@@ -27,55 +33,100 @@ flowchart LR
 | Boundary | Responsibility |
 | --- | --- |
 | GitHub -> AWS runner | Check out the exact dispatched commit; manual dispatch only |
-| Runner -> Spread -> Workshop | Compile the source and run CTest in a dedicated Workshop environment |
-| Workshop -> Spread worker | Validate and transfer the ELF binary and identity manifest into an isolated LXD worker |
+| Runner -> Spread -> Workshop | Select the target SDK and build recipe; native builds run CTest, MCU builds produce firmware |
+| Workshop -> Spread worker | Validate the target bundle and manifest; Workshop runs on the host for native builds and in the worker for the current MCU path |
 | Worker -> Testflinger | Check the dedicated queue, submit once, and upload the binary attachments |
-| Testflinger -> laptop | Agent polls through the SSH tunnel and executes the binary in a restricted sandbox |
-| Laptop -> Testflinger -> Spread -> GitHub | Return phase results, correlate execution proof, verify the binary digest, and publish evidence |
+| Testflinger -> target adapter | Native: sandboxed execution. MCU: device identity, flash policy, one write, verification, and runtime proof |
+| Target -> Testflinger -> Spread -> GitHub | Return phase results, verify target-specific evidence, and publish artifacts |
 
-This run executes a real native binary on the laptop. It does not flash an MCU.
-The 13 offline failure scenarios are separate tests, not live fault injections.
-USB MCU execution and the proposed device registry are not demonstrated by this run.
+Only the selected target and mode are exercised. Build-only mode never submits a hardware job.
+The laptop is the verified native reference target; ESP32-C6 hardware integration remains unverified.
+micro:bit and Nucleo remain disabled. Offline failure scenarios and the proposed device registry are not live hardware evidence.
 """
 
 
-def report(root, run_id, commit, pipeline_outcome):
+def native_evidence(root, run_id, commit):
+    manifest, _ = validate(root / "build/bundle")
+    receipt = read_json(root / "laptop/receipt.json")
+    results = read_json(root / "laptop/phase-results.json")
+    require(manifest["run_id"] == receipt["run_id"] == run_id, "Run identity mismatch")
+    require(manifest["commit"] == receipt["commit"] == commit, "Source identity mismatch")
+    require(manifest["nonce"] == receipt["nonce"], "Nonce mismatch")
+    require(manifest["binary_sha256"] == receipt["binary_sha256"], "Binary identity mismatch")
+    require(receipt["kind"] == "native" and receipt["stage"] == "complete"
+            and receipt["status"] == "pass", "Missing native completion receipt")
+    proof = verify_evidence(root / "laptop/artifacts.tar.gz", results, receipt)
+    return [
+        ("Source commit", manifest["commit"]), ("Run identity", manifest["run_id"]),
+        ("Binary SHA256", manifest["binary_sha256"]), ("Per-build nonce", manifest["nonce"]),
+        ("Testflinger job", proof["job_id"]), ("Agent / queue", proof["agent"]),
+        ("Testflinger setup / test / cleanup", "0 / 0 / 0"),
+        ("Native self-tests / exit code", f"{proof['checks']} passed / {proof['exit_code']}"),
+        ("MCU access / flash", "false / false"),
+    ]
+
+
+def firmware_evidence(root, target, run_id, commit, mode, config_path):
+    output = root / "targets" / target
+    manifest, captured = validate_firmware(output / "bundle")
+    require(manifest["commit"] == commit, "Source identity mismatch")
+    manifest_bytes = (output / "bundle/manifest.json").read_bytes()
+    rows = [("Source commit", manifest["commit"]), ("Run identity", run_id),
+            ("Firmware manifest SHA256", digest(manifest_bytes)), ("Per-build nonce", manifest["nonce"])]
+    if mode == "build":
+        require(not (output / "hardware/receipt.json").exists(), "Unexpected hardware submission in build-only run")
+        return rows + [("Hardware submission / flash / runtime", "not run (build-only)")]
+    require(config_path is not None, "Private target configuration is required for hardware evidence")
+    config = validate_config(read_json(config_path))
+    require(digest(captured["partition-table.bin"]) == config["partition_sha256"], "Partition policy mismatch")
+    receipt = read_json(output / "hardware/receipt.json")
+    require(receipt["target"] == target and receipt["run_id"] == run_id, "Target/run identity mismatch")
+    require(receipt["manifest_sha256"] == digest(manifest_bytes), "Firmware identity mismatch")
+    require(receipt["stage"] == "complete" and receipt["status"] == "pass", "Missing hardware completion receipt")
+    results = read_json(output / "hardware/phase-results.json")
+    proof = verify_firmware_evidence(output / "hardware/artifacts.tar.gz", results, manifest_bytes, config)
+    require(receipt["proof"] == proof, "Hardware receipt differs from verified proof")
+    return rows + [("Testflinger job", receipt["job_id"]), ("Agent / queue", config["agent"] + " / " + config["queue"]),
+                   ("Testflinger setup / test / cleanup", "0 / 0 / 0"),
+                   ("Device identity", proof["device_mac"]), ("Verified flash count", proof["flash_count"]),
+                   ("Runtime proof", "three increasing device/nonce sequences")]
+
+
+def report(root, run_id, commit, pipeline_outcome, target="laptop", mode="native", config_path=None):
     lines = ["## Downstream Execution Evidence", "",
              f"Spread orchestration outcome: **{pipeline_outcome}**", ""]
+    lines.append(table(root / "progress", run_id, target))
     try:
         require(pipeline_outcome == "success", "Spread did not succeed")
-        manifest, _ = validate(root / "build/bundle")
-        receipt = read_json(root / "laptop/receipt.json")
-        results = read_json(root / "laptop/phase-results.json")
-        require(manifest["run_id"] == receipt["run_id"] == run_id, "Run identity mismatch")
-        require(manifest["commit"] == receipt["commit"] == commit, "Source identity mismatch")
-        require(manifest["nonce"] == receipt["nonce"], "Nonce mismatch")
-        require(manifest["binary_sha256"] == receipt["binary_sha256"], "Binary identity mismatch")
-        require(receipt["kind"] == "native" and receipt["stage"] == "complete"
-                and receipt["status"] == "pass", "Missing native completion receipt")
-        proof = verify_evidence(root / "laptop/artifacts.tar.gz", results, receipt)
+        targets = read_json(Path(__file__).resolve().parents[1] / "targets.json")
+        require(target in targets and targets[target]["enabled"], "Target is disabled or unknown")
+        adapter = targets[target].get("adapter")
+        if adapter == "native":
+            require(mode == "native", "Native target cannot flash firmware")
+            rows = native_evidence(root, run_id, commit)
+        elif adapter == "esp32c6":
+            require(mode in ("build", "hardware"), "Firmware target requires build or hardware mode")
+            rows = firmware_evidence(root, target, run_id, commit, mode, config_path)
+        else:
+            raise ValueError("No evidence adapter for this target")
     except Exception as error:
         lines += ["**INCOMPLETE: end-to-end success has not been verified.**", "",
                   f"Verification stopped with `{type(error).__name__}`. Inspect the failed step and available artifacts.",
                   "Do not resubmit automatically: an existing Testflinger job may still be active."]
         return "\n".join(lines) + "\n", False
-    lines += ["**PASS: the Workshop binary matches the laptop execution evidence.**", "",
-              "| Evidence | Verified value |", "| --- | --- |",
-              f"| Source commit | `{manifest['commit']}` |",
-              f"| Run identity | `{manifest['run_id']}` |",
-              f"| Binary SHA256 | `{manifest['binary_sha256']}` |",
-              f"| Per-build nonce | `{manifest['nonce']}` |",
-              f"| Testflinger job | `{proof['job_id']}` |",
-              f"| Laptop agent / queue | `{proof['agent']}` |",
-              "| Testflinger setup / test / cleanup | `0 / 0 / 0` |",
-              f"| Laptop self-tests / exit code | `{proof['checks']} passed / {proof['exit_code']}` |",
-              "| MCU access / flash | `false / false` |", "",
+    scope = "build evidence only; hardware execution NOT RUN" if mode == "build" else "target execution evidence verified"
+    lines += [f"**PASS: {scope}.**", "", f"Target: `{target}`. Mode: `{mode}`.", "",
+              "| Evidence | Verified value |", "| --- | --- |"]
+    lines += [f"| {label} | `{value}` |" for label, value in rows]
+    lines += ["",
               "### Evidence to Inspect", "",
               "- `build/workshop-build.log`: compiler and CTest output.",
               "- `build/bundle/`: compiled ELF binary and source/run/digest manifest.",
               "- `laptop/receipt.json`: Testflinger job identity and completion receipt.",
               "- `laptop/phase-results.json`: downstream phase statuses.",
               "- `laptop/artifacts.tar.gz`: laptop proof and `artifacts/native-output.log`.",
+              "- `targets/<target>/bundle/`: MCU firmware and manifest (MCU runs).",
+              "- `targets/<target>/hardware/`: receipt, phase results, and flash/serial proof (hardware mode only).",
               "- `showcase.md`: this run's architecture and verification report.", "",
               "Artifact publication is a separate step; check its outcome before sharing the bundle."]
     return "\n".join(lines) + "\n", True
@@ -85,12 +136,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--outcome", choices=("success", "failure", "cancelled", "skipped"))
+    parser.add_argument("--target", default="laptop")
+    parser.add_argument("--mode", choices=("native", "build", "hardware"), default="native")
+    parser.add_argument("--config", type=Path)
     args = parser.parse_args()
     text, passed = ARCHITECTURE, True
+    text += f"\nSelected target: `{args.target}`. Mode: `{args.mode}`.\n"
     if args.report is not None:
         require(args.outcome is not None, "Missing orchestration outcome")
         text, passed = report(args.report, os.environ["HILAAS_RUN_ID"],
-                              os.environ["HILAAS_COMMIT"], args.outcome)
+                              os.environ["HILAAS_COMMIT"], args.outcome, args.target, args.mode, args.config)
         args.report.mkdir(parents=True, exist_ok=True)
         (args.report / "showcase.md").write_text(ARCHITECTURE + "\n" + text)
     print(text)

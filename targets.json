@@ -1,6 +1,15 @@
 {
+  "laptop": {
+    "enabled": true,
+    "kind": "native",
+    "adapter": "native",
+    "architecture": "x86_64",
+    "harness": "native-selftest"
+  },
   "esp32c6-devkitc-1": {
     "enabled": true,
+    "kind": "mcu",
+    "adapter": "esp32c6",
     "chip": "esp32c6",
     "architecture": "riscv32",
     "build_sdk": "ESP-IDF v5.5.3",

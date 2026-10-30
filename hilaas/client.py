@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from hilaas.bundle import TARGET, digest, read_json, require, unique_keys, validate
+from hilaas.progress import stage
 
 
 def save(path, value):
@@ -140,13 +141,14 @@ def execute(directory, config, api, run_id, commit, ledger_dir, output, timeout=
         previous = read_json(ledger)
         save(output / "receipt.json", previous)
         raise RuntimeError(f"Submission already attempted: {previous['job_id']}; inspect it before a new run")
-    restriction = api.get_json("/v1/restricted-queues/" + config["queue"])
-    require(restriction and restriction.get("owners") == [config["submitter"]], "Queue must be restricted to the dedicated submitter")
-    agent = api.get_json("/v1/agents/data/" + config["agent"])
-    require(agent and agent.get("state") == "waiting" and not agent.get("job"), "Expected idle registered agent")
-    require(agent.get("queues") == [config["queue"]], "Unexpected agent queue configuration")
-    jobs = api.get_json("/v1/queues/" + config["queue"] + "/jobs") or []
-    require(not any(job.get("job_state") not in ("complete", "cancelled") for job in jobs), "Queue has outstanding work")
+    with stage("testflinger.preflight"):
+        restriction = api.get_json("/v1/restricted-queues/" + config["queue"])
+        require(restriction and restriction.get("owners") == [config["submitter"]], "Queue must be restricted to the dedicated submitter")
+        agent = api.get_json("/v1/agents/data/" + config["agent"])
+        require(agent and agent.get("state") == "waiting" and not agent.get("job"), "Expected idle registered agent")
+        require(agent.get("queues") == [config["queue"]], "Unexpected agent queue configuration")
+        jobs = api.get_json("/v1/queues/" + config["queue"] + "/jobs") or []
+        require(not any(job.get("job_state") not in ("complete", "cancelled") for job in jobs), "Queue has outstanding work")
     job_id = str(uuid.uuid4())
     receipt = {"job_id": job_id, "run_id": run_id, "target": TARGET,
                "manifest_sha256": digest(manifest_bytes), "stage": "submission_intent", "status": "pending"}
@@ -166,32 +168,36 @@ def execute(directory, config, api, run_id, commit, ledger_dir, output, timeout=
         job = {"job_id": job_id, "job_queue": config["queue"], "test_data": {
             "test_cmds": f"HILAAS_C6 {config['device_mac']} {manifest['nonce']} {digest(manifest_bytes)}",
             "attachments": [{"agent": name} for name in captured]}}
-        response = api.request("POST", "/v1/job", json=job).json()
-        require(response.get("job_id") == job_id, "Server changed the requested job ID")
+        with stage("testflinger.submit"):
+            response = api.request("POST", "/v1/job", json=job).json()
+            require(response.get("job_id") == job_id, "Server changed the requested job ID")
         receipt["stage"] = "attachments"
         save(output / "receipt.json", receipt)
-        api.request("POST", f"/v1/job/{job_id}/attachments",
-                    files={"file": ("attachments.tar.gz", attachment_archive(captured), "application/gzip")})
+        with stage("testflinger.attachments"):
+            api.request("POST", f"/v1/job/{job_id}/attachments",
+                        files={"file": ("attachments.tar.gz", attachment_archive(captured), "application/gzip")})
         receipt["stage"] = "waiting"
-        deadline = clock() + timeout
-        while True:
-            results = api.get_json(f"/v1/result/{job_id}")
-            save(output / "phase-results.json", results)
-            if results.get("job_state") in ("complete", "cancelled"):
-                break
-            if clock() >= deadline:
-                raise TimeoutError("Job still pending; no automatic resubmission or cancellation")
-            wait(5)
+        with stage("testflinger.wait"):
+            deadline = clock() + timeout
+            while True:
+                results = api.get_json(f"/v1/result/{job_id}")
+                save(output / "phase-results.json", results)
+                if results.get("job_state") in ("complete", "cancelled"):
+                    break
+                if clock() >= deadline:
+                    raise TimeoutError("Job still pending; no automatic resubmission or cancellation")
+                wait(5)
         receipt["stage"] = "artifacts"
         archive_path = output / "artifacts.tar.gz"
-        with api.request("GET", f"/v1/result/{job_id}/artifact", stream=True) as response:
-            size = 0
-            with archive_path.open("wb") as stream:
-                for chunk in response.iter_content(65536):
-                    size += len(chunk)
-                    require(size <= 10 * 2**20, "Evidence exceeds 10 MiB")
-                    stream.write(chunk)
-        proof = verify_evidence(archive_path, results, manifest_bytes, config)
+        with stage("testflinger.evidence"):
+            with api.request("GET", f"/v1/result/{job_id}/artifact", stream=True) as response:
+                size = 0
+                with archive_path.open("wb") as stream:
+                    for chunk in response.iter_content(65536):
+                        size += len(chunk)
+                        require(size <= 10 * 2**20, "Evidence exceeds 10 MiB")
+                        stream.write(chunk)
+            proof = verify_evidence(archive_path, results, manifest_bytes, config)
         receipt.update(status="pass", stage="complete", proof=proof)
         return receipt
     except Exception as error:

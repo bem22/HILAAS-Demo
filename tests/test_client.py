@@ -1,11 +1,15 @@
 import io
 import json
+import os
+import shutil
 import tarfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from hilaas.bundle import TARGET, digest
+from hilaas.bundle import FLASH_FILES, TARGET, digest
+from hilaas import progress
 from hilaas.client import execute, serial_proof, validate_config, verify_evidence
+from hilaas.showcase import report
 from test_bundle import BundleFixture
 
 
@@ -102,5 +106,43 @@ class ClientTests(BundleFixture, unittest.TestCase):
                 response.iter_content.return_value = [archive.read_bytes()]
             return response
         self.api.request.side_effect = request
-        self.assertEqual(self.run_job()["status"], "pass")
+        with patch.dict(os.environ, HILAAS_PROGRESS_DIR=str(self.directory / "progress"), HILAAS_RUN_ID="run-1", HILAAS_TARGET=TARGET):
+            self.assertEqual(self.run_job()["status"], "pass")
         self.assertEqual([call.args[0] for call in self.api.request.call_args_list], ["POST", "POST", "GET"])
+        recorded = progress.events(self.directory / "progress", "run-1", TARGET)
+        self.assertEqual([event["stage"] for event in recorded if event["status"] == "passed"], [
+            "testflinger.preflight", "testflinger.submit", "testflinger.attachments", "testflinger.wait", "testflinger.evidence"])
+        root = self.directory / "report"
+        bundle = root / "targets" / TARGET / "bundle"
+        bundle.mkdir(parents=True)
+        for name in (*FLASH_FILES, "manifest.json"):
+            shutil.copyfile(self.directory / name, bundle / name)
+        hardware = bundle.parent / "hardware"
+        shutil.copytree(self.output, hardware)
+        config_path = self.directory / "client.json"
+        config_path.write_text(json.dumps(self.config))
+        text, passed = report(root, "run-1", "b" * 40, "success", TARGET, "hardware", config_path)
+        self.assertTrue(passed)
+        self.assertIn("Verified flash count", text)
+        self.assertIn("three increasing", text)
+        self.assertNotIn("Native self-tests", text)
+        phases = json.loads((hardware / "phase-results.json").read_text())
+        phases["cleanup_status"] = 1
+        (hardware / "phase-results.json").write_text(json.dumps(phases))
+        text, passed = report(root, "run-1", "b" * 40, "success", TARGET, "hardware", config_path)
+        self.assertFalse(passed)
+
+    def test_generic_report_distinguishes_build_only_from_hardware(self):
+        output = self.directory / "report"
+        bundle = output / "targets" / TARGET / "bundle"
+        bundle.mkdir(parents=True)
+        for source in self.directory.iterdir():
+            if source.is_file():
+                shutil.copyfile(source, bundle / source.name)
+        text, passed = report(output, "run-1", "b" * 40, "success", TARGET, "build")
+        self.assertTrue(passed)
+        self.assertIn("hardware execution NOT RUN", text)
+        text, passed = report(output, "run-1", "b" * 40, "success", TARGET, "hardware")
+        self.assertFalse(passed)
+        text, passed = report(output, "run-1", "b" * 40, "success", "microbit", "build")
+        self.assertFalse(passed)

@@ -1,14 +1,16 @@
 summary: Execute the Workshop-built native binary on the laptop through Testflinger
 backends: [mock-container]
 environment:
-  HILAAS_TARGET/laptop: hilaas-laptop-mock
+  HILAAS_TARGET/laptop: laptop
 prepare: |
+  export HILAAS_PROGRESS_DIR=/var/lib/hilaas-progress
   test "$HILAAS_MODE" = mock
   test "$HILAAS_ENABLE_HARDWARE" = no
   test "$(cat /etc/hilaas-spread-template)" = mock-v1
   cd /home/ubuntu/HILAAS-Demo
-  python3 -m pytest tests/test_mock.py -q
+  python3 -m hilaas.progress step worker.tests -- env -u HILAAS_PROGRESS_DIR python3 -m pytest tests/test_mock.py -q
 execute: |
+  export HILAAS_PROGRESS_DIR=/var/lib/hilaas-progress
   cd /home/ubuntu/HILAAS-Demo
   python3 -m hilaas.mock_client \
     --server "$HILAAS_MOCK_SERVER" \

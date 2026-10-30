@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from hilaas.bundle import SDK_VERSION, TARGET, package, read_json, require, validate
+from hilaas.progress import stage
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,7 @@ def main():
         print(json.dumps(targets, indent=2))
         return
     require(args.target in targets and targets[args.target]["enabled"], "Target is unconfigured; confirm the exact board first")
+    require(args.target == TARGET, "This firmware adapter only supports the configured ESP32-C6 target")
     commit = os.environ.get("HILAAS_COMMIT", "")
     require(re.fullmatch(r"[0-9a-f]{40}", commit), "HILAAS_COMMIT must identify committed source")
     build = ROOT / "build"
@@ -51,10 +53,12 @@ def main():
             require(os.environ.get("HILAAS_RUN_ATTEMPT", "1") == "1", "Hardware reruns are disabled")
             require(Path(os.environ["HILAAS_LEDGER_DIR"]).is_dir(), "Persistent host ledger mount is required")
         args.output.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["workshop", "run", "--non-interactive", "--timeout", "30m",
-                        "--env", f"HILAAS_COMMIT={commit}", "--", "build"], cwd=ROOT, check=True)
-        manifest, _ = validate(build / "bundle")
-        require(manifest["commit"] == commit, "Build commit mismatch")
+        with stage("workshop.build"):
+            subprocess.run(["workshop", "run", "--non-interactive", "--timeout", "30m",
+                            "--env", f"HILAAS_COMMIT={commit}", "--", "build"], cwd=ROOT, check=True)
+        with stage("bundle.validate"):
+            manifest, _ = validate(build / "bundle")
+            require(manifest["commit"] == commit, "Build commit mismatch")
         destination = args.output / "bundle"
         require(not destination.exists(), "Use a fresh artifact directory")
         shutil.copytree(build / "bundle", destination)

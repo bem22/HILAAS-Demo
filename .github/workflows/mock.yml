@@ -1,20 +1,42 @@
-name: HILAAS source-to-laptop architecture showcase
+name: HILAAS target pipeline showcase
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: Target adapter (MCU integration requires configured hardware)
+        type: choice
+        options: [laptop, esp32c6-devkitc-1]
+        default: laptop
+      flash_and_test:
+        description: Authorize one physical MCU firmware job
+        type: boolean
+        default: false
+      allow_downloads:
+        description: Allow MCU SDK setup and build downloads
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: hilaas-laptop-mock
+  group: ${{ inputs.target == 'esp32c6-devkitc-1' && 'hilaas-physical-lab' || 'hilaas-laptop-mock' }}
   cancel-in-progress: false
 jobs:
   mock:
-    name: GitHub -> AWS -> Spread -> Workshop -> Testflinger -> Laptop
+    name: Source -> Spread -> Workshop -> Testflinger -> ${{ inputs.target }}
     if: github.repository == 'bem22/HILAAS-Demo' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64, hilaas-demo]
-    timeout-minutes: 30
+    timeout-minutes: 70
     env:
       HILAAS_RUN_ID: github-${{ github.run_id }}
       HILAAS_COMMIT: ${{ github.sha }}
+      HILAAS_TARGET: ${{ inputs.target }}
+      HILAAS_MODE: ${{ inputs.target == 'laptop' && 'mock' || inputs.flash_and_test && 'hardware' || 'build' }}
+      HILAAS_ENABLE_HARDWARE: ${{ inputs.flash_and_test && 'yes' || 'no' }}
+      HILAAS_ALLOW_DOWNLOADS: ${{ inputs.allow_downloads && 'yes' || 'no' }}
+      HILAAS_WORKER_IMAGE: ${{ vars.HILAAS_WORKER_IMAGE }}
+      HILAAS_CLIENT_CONFIG: ${{ vars.HILAAS_CLIENT_CONFIG }}
+      HILAAS_AUTH_DIR: ${{ vars.HILAAS_AUTH_DIR }}
+      REPORT_MODE: ${{ inputs.target == 'laptop' && 'native' || inputs.flash_and_test && 'hardware' || 'build' }}
       HILAAS_MOCK_WORKER_IMAGE: ${{ vars.HILAAS_MOCK_WORKER_IMAGE || '3c9090e9657b2f4bca98345178c44718c1e0776d0ffe2d230b13a5f0d39b2845' }}
     steps:
       - name: "1. GitHub -> AWS runner: check out exact source"
@@ -23,27 +45,40 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: "2. Architecture: show orchestration and downstream boundaries"
-        run: python3 -m hilaas.showcase
-      - name: "3. Spread: Workshop build -> worker -> Testflinger -> laptop"
+        run: python3 -m hilaas.showcase --target "$HILAAS_TARGET" --mode "$REPORT_MODE"
+      - name: "3. Spread: target build -> Testflinger -> target adapter"
         id: chain
         shell: bash
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          bash scripts/run-mock-spread.sh
-      - name: "4. Evidence: verify source -> binary -> Testflinger job -> laptop proof"
+          case "$HILAAS_TARGET" in
+            laptop) bash scripts/run-mock-spread.sh ;;
+            esp32c6-devkitc-1) bash scripts/run-spread.sh "$HILAAS_MODE" ;;
+            *) exit 1 ;;
+          esac
+      - name: "4. Evidence: verify target bundle, stage timings, and execution proof"
         if: always()
         env:
           PIPELINE_OUTCOME: ${{ steps.chain.outcome }}
-        run: python3 -m hilaas.showcase --report "artifacts/$HILAAS_RUN_ID" --outcome "$PIPELINE_OUTCOME"
-      - name: "5. Publish: architecture report, Workshop binary, and laptop evidence"
+        shell: bash
+        run: |
+          arguments=()
+          if [[ "$REPORT_MODE" == hardware ]]; then
+            arguments+=(--config "$HILAAS_CLIENT_CONFIG")
+          fi
+          python3 -m hilaas.showcase --report "artifacts/$HILAAS_RUN_ID" --outcome "$PIPELINE_OUTCOME" \
+            --target "$HILAAS_TARGET" --mode "$REPORT_MODE" "${arguments[@]}"
+      - name: "5. Publish: architecture, stage events, target bundle, and evidence"
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: native-${{ github.run_id }}-${{ github.run_attempt }}
+          name: target-${{ inputs.target }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             artifacts/github-${{ github.run_id }}/build/
             artifacts/github-${{ github.run_id }}/laptop/
+            artifacts/github-${{ github.run_id }}/targets/
+            artifacts/github-${{ github.run_id }}/progress/
             artifacts/github-${{ github.run_id }}/showcase.md
           if-no-files-found: warn
           retention-days: 14

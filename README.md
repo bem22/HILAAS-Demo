@@ -1,12 +1,46 @@
 # HILAAS-Demo
 
 GitHub -> self-hosted runner -> Canonical Spread -> Workshop build ->
-Testflinger client -> AWS Testflinger server -> Pi agent -> MCU.
+Testflinger client -> AWS Testflinger server -> target agent -> laptop or MCU.
 
-Spread owns the board matrix. Each selected job builds, validates its bundle,
+Spread owns the target execution. Each selected job builds, validates its bundle,
 and optionally submits and waits for one Testflinger hardware job. The GitHub
 workflow does not duplicate that matrix. Spread never provisions the Pi agent
 hosts; they remain managed by their own Juju controllers.
+
+## Target pipeline and live stages
+
+Dispatch **HILAAS target pipeline showcase** and select `laptop` or
+`esp32c6-devkitc-1`. The laptop is the verified native reference target; an MCU
+selection does not imply its hardware integration has been validated. MCU mode
+defaults to build-only. SDK downloads and physical flashing require separate
+explicit permissions and the existing configured worker/device prerequisites.
+
+Both paths use the same stage recorder and GitHub log renderer. Open the Spread
+step for live collapsible transitions: Workshop launch/build, bundle validation,
+worker allocation/tests, Testflinger preflight/submission/attachments/wait/evidence,
+and cleanup where instrumented. The Summary includes per-target status, UTC
+timestamps, and measured durations; the artifact includes the raw `progress/`
+events and `showcase.md`. Missing events are marked unobserved, never passed.
+The wait duration includes queueing and cleanup, not just device runtime.
+
+The recorder writes only fixed-schema metadata to a dedicated per-run directory.
+A worker can write only its progress subdirectory, not the host event directory.
+The host streams those events while Spread runs; it does not depend on buffered
+Spread command output. Events are operational diagnostics, not trusted device
+proof. Unit-test subprocesses do not emit fake stages into a real run.
+
+Proof remains adapter-specific: native ELF identity/digest and self-tests for
+the laptop; firmware manifest, partition policy, device MAC, flash count, and
+serial nonce/sequence proof for ESP32-C6. A build-only report explicitly says
+hardware execution was not run. Adding another MCU requires an implemented
+build/device/evidence adapter, not merely a new target name. micro:bit and Nucleo
+remain disabled. The device registry remains a proposal.
+
+Current MCU blockers are unchanged: the nested Workshop worker path has not
+been validated, the queue-owner contract needs reconciliation with the deployed
+API, and no physical build/flash/run has been certified. This reporting change
+does not grant new device permissions or bypass those guards.
 
 ## Implementation status
 
@@ -127,7 +161,7 @@ testflinger-cli --server YOUR_SERVER_URL login
 Enter credentials locally, never in committed files or chat. Use a dedicated
 contributor account with access to a queue restricted to that same submitter.
 Authentication refresh tokens remain writable in the dedicated private profile;
-only the selected client config/profile and submission ledger are mounted into
+only the selected client config/profile, submission ledger, and dedicated progress directory are mounted into
 the worker. None of these paths is inside the Workshop project mount.
 
 ```sh
@@ -152,10 +186,13 @@ hardware attestation. Trusted repository access and restricted queues matter.
 
 ## GitHub Actions
 
-The separate **HILAAS Workshop laptop binary** workflow checks out the dispatched
-commit and runs only `mock-container:ubuntu-24.04:spread/mock:laptop`. Spread
-launches a fresh host Workshop build before creating the isolated Testflinger
-submitter worker. See [laptop operation and evidence](docs/mock.md).
+**HILAAS target pipeline showcase** is the single current workflow. It replaces
+the old MCU workflow and supports the laptop and ESP32-C6 target selections.
+The historical `mock.yml` filename is retained to preserve workflow history;
+its display name, inputs, and reporting are target-neutral. The superseded
+`demo.yml` is removed, not left as a second dispatch entry point.
+For the laptop, Spread launches a fresh host Workshop build before creating the
+isolated Testflinger submitter worker. See [laptop operation and evidence](docs/mock.md).
 
 Use a separate runner registration for `bem22/HILAAS-Demo` with labels
 `self-hosted`, `Linux`, `X64`, `hilaas-demo`. Leave `freertos-demo` registered to
@@ -163,11 +200,12 @@ its existing repository. Do not run two registrations concurrently against the
 same hardware resources without deliberate coordination.
 
 The workflow runs only from `main` using `workflow_dispatch`. It uses the
-pre-existing clean checkout at `$HOME/code/HILAAS-Demo`, checks that HEAD matches
-the dispatched commit, and never resets the user's working tree. Configure
+Actions-managed checkout pinned to the dispatched commit and checks that HEAD
+matches it. Configure
 repository variables `HILAAS_WORKER_IMAGE`, `HILAAS_CLIENT_CONFIG`, and
-`HILAAS_AUTH_DIR` (paths, not passwords). Build and hardware operations both
-require the download checkbox; hardware also requires its separate checkbox.
+`HILAAS_AUTH_DIR` (paths, not passwords) for MCU operations. MCU build and hardware
+operations both require the download checkbox; hardware also requires its
+separate checkbox. The laptop does not enable physical hardware access.
 
 Do not enable pull-request triggers on this persistent self-hosted runner.
 Labels select runners; they are not a security boundary. The public repo must

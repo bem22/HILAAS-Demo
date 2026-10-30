@@ -3,6 +3,7 @@ backends: [local-vm]
 environment:
   HILAAS_TARGET/esp32c6: esp32c6-devkitc-1
 prepare: |
+  export HILAAS_PROGRESS_DIR=/var/lib/hilaas-progress
   test "$HILAAS_ALLOW_DOWNLOADS" = yes || { echo "Explicit SDK/download permission required"; exit 1; }
   test "$(cat /etc/hilaas-spread-template)" = v1
   command -v workshop
@@ -10,8 +11,9 @@ prepare: |
   cd /home/ubuntu/HILAAS-Demo
   chmod +x .workshop/build-prereqs/hooks/setup-base
   chown -R 1000:1000 .
-  workshop launch
+  /opt/hilaas-client/bin/python -m hilaas.progress step workshop.launch -- workshop launch
 execute: |
+  export HILAAS_PROGRESS_DIR=/var/lib/hilaas-progress
   cd /home/ubuntu/HILAAS-Demo
   /opt/hilaas-client/bin/python -m hilaas.cli run \
     --target "$HILAAS_TARGET" --mode "$HILAAS_MODE" \
