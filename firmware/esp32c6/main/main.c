@@ -1,3 +1,4 @@
+#include "../../common/selftest.h"
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -9,6 +10,9 @@
 
 void app_main(void)
 {
+    if (hilaas_selftest() != 0) {
+        return;
+    }
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
     uint32_t sequence = 0;

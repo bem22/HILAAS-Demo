@@ -34,6 +34,9 @@ class SpreadTests(unittest.TestCase):
         mock = yaml.safe_load((ROOT / "spread/mock/task.yaml").read_text())
         boards = yaml.safe_load((ROOT / "spread/boards/task.yaml").read_text())
         self.assertIn("mock-container", project["backends"])
+        allocation = project["backends"]["mock-container"]["allocate"]
+        self.assertLess(allocation.index("python3 -m hilaas.native"), allocation.index("python3 -m hilaas.worker allocate"))
+        self.assertIn("--bundle /opt/hilaas-native", mock["execute"])
         self.assertEqual(mock["backends"], ["mock-container"])
         self.assertEqual(boards["backends"], ["local-vm"])
         self.assertEqual(mock["environment"], {"HILAAS_TARGET/laptop": "hilaas-laptop-mock"})

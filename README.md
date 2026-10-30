@@ -10,8 +10,10 @@ hosts; they remain managed by their own Juju controllers.
 
 ## Implementation status
 
-- Laptop mock: the source-level tests and AWS Spread -> Testflinger -> laptop
-  round trip passed on 2026-10-30. No hardware was used. See [mock pipeline](docs/mock.md).
+- Laptop binary: the manual workflow connects GitHub -> runner -> Spread ->
+  Workshop -> Testflinger -> laptop, executing the received native ELF in a
+  sandbox. Local execution and a direct AWS Workshop build passed; full workflow
+  verification is pending. See [laptop pipeline](docs/mock.md).
 - Implemented: ESP32-C6 DevKitC-1 ESP-IDF build recipe and proof firmware,
   immutable firmware bundle, Spread task and local disposable-VM backend,
   guarded Testflinger client adapter, and host-controlled pytest agent adapter.
@@ -40,6 +42,41 @@ Optional dependencies are declared in `pyproject.toml`. Installing
 `.[test]`, `.[client]`, or `.[agent]` needs network access unless cached.
 The client uses `testflinger-cli` authentication with a no-retry requests
 transport. Its compatibility must be checked when updating the client package.
+
+## Portable binary self-test
+
+`firmware/common/selftest.c` is the same SDK-independent C test on the laptop
+and ESP32-C6. It checks CRC32 against known answers for empty, ASCII, and binary
+data, incremental CRC processing, and unsigned 32-bit wraparound. The binary
+test vector is independently verified against Python's standard `zlib.crc32`.
+
+Build and execute a real native binary on the laptop:
+
+```sh
+cmake -S firmware/native -B build/native -DCMAKE_BUILD_TYPE=Release
+cmake --build build/native
+ctest --test-dir build/native --output-on-failure
+./build/native/hilaas-selftest
+```
+
+Success ends with `HILAAS_SELFTEST_V1 status=pass checks=5 failures=0` and exit
+code zero. A failed check prints its expected and actual values and returns a
+nonzero exit code. CTest treats a nonzero exit or a failure marker as failure.
+
+The ESP-IDF component compiles the same source into the MCU firmware.
+`app_main` runs it before emitting any normal C6 nonce/sequence proof; failure
+stops that proof, so the hardware harness cannot pass. Results go to the serial
+console. No OS-specific implementation or Python runtime is needed on the MCU.
+
+The laptop binary is native to the laptop; the MCU firmware must be separately
+cross-compiled. Passing the laptop test does not validate the MCU toolchain,
+firmware packaging, peripherals, or flashing. The native binary was also built
+and passed CTest inside Workshop 0.9.9 on AWS with LXD 6.10.1 and dedicated ZFS
+storage; see [the host Workshop checkpoint](docs/worker.md#aws-host-workshop-checkpoint).
+The old nested firmware worker remains blocked, and no MCU build or run is claimed.
+The laptop workflow builds this executable in Workshop, transfers it through
+Testflinger, and checks its digest, embedded commit/run/nonce, and runtime output.
+No Testflinger job is submitted by the local build commands above.
 
 ## First build
 
@@ -110,9 +147,10 @@ hardware attestation. Trusted repository access and restricted queues matter.
 
 ## GitHub Actions
 
-The separate **HILAAS laptop mock** workflow checks out the dispatched commit
-and runs only `mock-container:ubuntu-24.04:spread/mock:laptop`. It does not
-require Workshop or firmware builds. See [mock operation and evidence](docs/mock.md).
+The separate **HILAAS Workshop laptop binary** workflow checks out the dispatched
+commit and runs only `mock-container:ubuntu-24.04:spread/mock:laptop`. Spread
+launches a fresh host Workshop build before creating the isolated Testflinger
+submitter worker. See [laptop operation and evidence](docs/mock.md).
 
 Use a separate runner registration for `bem22/HILAAS-Demo` with labels
 `self-hosted`, `Linux`, `X64`, `hilaas-demo`. Leave `freertos-demo` registered to

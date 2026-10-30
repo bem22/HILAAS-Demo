@@ -315,3 +315,49 @@ its LXD group access is privileged and the server shares the host. Source still
 needs an authorized commit and publication before the workflow can run; no
 provenance guard has been bypassed. Pi connections, agents, flashing, and
 hardware tests are explicitly on hold.
+
+## AWS host Workshop checkpoint
+
+On 2026-10-30, Workshop was installed directly on the AWS host instead of
+inside the unprivileged firmware template. Its separate `workshop` ZFS pool
+is 8 GiB; existing Juju storage pools were not changed.
+
+Workshop 0.1.29 requires LXD >=6.3. With approval for a maintenance interruption,
+the two running Juju containers were stopped cleanly, LXD was stopped, and
+`snap save lxd` produced snapshot set `1` (9.6 GB, LXD revision `40958`).
+The host was upgraded to LXD 6.10.1, revision `41228`, on `6/stable`, and the
+same Juju containers were restarted. Preserve the private backup; it contains
+service data and credentials and must not be published. Restore has not been tested.
+
+The old Workshop then failed because it supplied obsolete NVIDIA configuration
+keys to LXD. Updating only the host Workshop with
+`sudo snap refresh workshop --amend --channel=latest/stable --classic`
+installed Store release `0.9.9-f8fdf0d` and resolved the launch failure.
+The stopped nested firmware template and its SDK versions remain unchanged.
+
+The native definition from `config/native-workshop/`, including its `.workshop`
+directory, and the `firmware/common/` and `firmware/native/` source directories
+are staged under `/home/ubuntu/hilaas-native-workshop` on AWS. Its native-tools
+project SDK installs GCC and CMake inside Workshop, not on the host.
+
+These commands succeeded on AWS:
+
+```sh
+workshop -p /home/ubuntu/hilaas-native-workshop launch
+workshop -p /home/ubuntu/hilaas-native-workshop run --non-interactive -- build
+```
+
+Workshop `hilaas-native-build` is Ready. GCC 13.3.0 compiled the x86-64 ELF
+`build/native/hilaas-selftest`, and CTest passed its portable test (five checks).
+The output SHA-256 was
+`c2eae0091518968991d5c82f3f23998639323532008073cf34cd125c9b760269`.
+Testflinger was 2/2 Ready, both Juju containers were Running, and the GitHub
+runner service was active after validation.
+
+This checkpoint was a direct Workshop build of staged source, not a
+GitHub-triggered binary pipeline. The native workflow now invokes Workshop
+from Spread and delivers its executable through Testflinger; see the
+[laptop binary pipeline](mock.md) for its contract and verification status.
+The old staged binary is not reused by that workflow. No new Testflinger job
+or hardware operation was performed during this checkpoint; ESP-IDF and
+Zephyr cross-builds remain unverified.

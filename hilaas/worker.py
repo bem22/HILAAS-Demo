@@ -12,6 +12,7 @@ from pathlib import Path
 
 from hilaas.bundle import read_json, require
 from hilaas.client import save
+from hilaas.native import BINARY, MANIFEST, validate as validate_native
 
 
 def lxc(*arguments, input_text=None, check=True):
@@ -60,9 +61,13 @@ def allocate(path):
     password = os.environ["SPREAD_PASSWORD"]
     require(password and "\n" not in password and ":" not in password, "Invalid Spread session password")
     mock_token = None
+    native_bundle = None
     if mock:
         mock_token = Path(os.environ["HILAAS_MOCK_TOKEN_FILE"]).resolve(strict=True)
         require(mock_token.is_file() and read_json(mock_token).get("client_id") == "hilaas-laptop-mock-submitter", "Dedicated mock submitter file required")
+        if os.environ.get("HILAAS_NATIVE_BUNDLE"):
+            native_bundle = Path(os.environ["HILAAS_NATIVE_BUNDLE"]).resolve(strict=True)
+            validate_native(native_bundle)
     config = auth = None
     if os.environ.get("HILAAS_MODE", "build") == "hardware":
         config = Path(os.environ["HILAAS_CLIENT_CONFIG"]).resolve(strict=True)
@@ -109,6 +114,10 @@ def allocate(path):
         if mock:
             lxc("exec", name, "--", "install", "-d", "-m", "700", "/etc/hilaas-mock")
             lxc("file", "push", "--mode=0600", str(mock_token), name + "/etc/hilaas-mock/submitter.json")
+        if native_bundle is not None:
+            lxc("exec", name, "--", "install", "-d", "-m", "700", "/opt/hilaas-native")
+            for filename in (BINARY, MANIFEST):
+                lxc("file", "push", "--mode=0600", str(native_bundle / filename), name + "/opt/hilaas-native/" + filename)
         lxc("exec", name, "--", "chpasswd", input_text="root:" + password + "\n")
         lease["address"] = address
         save(path, lease)

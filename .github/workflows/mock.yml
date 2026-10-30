@@ -1,4 +1,4 @@
-name: HILAAS laptop mock
+name: HILAAS Workshop laptop binary
 on:
   workflow_dispatch:
 permissions:
@@ -10,7 +10,7 @@ jobs:
   mock:
     if: github.repository == 'bem22/HILAAS-Demo' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64, hilaas-demo]
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       HILAAS_RUN_ID: github-${{ github.run_id }}
       HILAAS_COMMIT: ${{ github.sha }}
@@ -21,17 +21,19 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Run source tests and laptop mock through Spread
+      - name: Build in Workshop and execute on laptop through Spread and Testflinger
         shell: bash
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
           bash scripts/run-mock-spread.sh
-      - name: Upload mock receipts and evidence
+      - name: Upload Workshop binary and laptop execution evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: mock-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/github-${{ github.run_id }}/
+          name: native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/github-${{ github.run_id }}/build/
+            artifacts/github-${{ github.run_id }}/laptop/
           if-no-files-found: warn
           retention-days: 14

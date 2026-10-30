@@ -1,4 +1,4 @@
-summary: Source-level mock test delivered to the laptop by Testflinger
+summary: Execute the Workshop-built native binary on the laptop through Testflinger
 backends: [mock-container]
 environment:
   HILAAS_TARGET/laptop: hilaas-laptop-mock
@@ -15,6 +15,7 @@ execute: |
     --token-file /etc/hilaas-mock/submitter.json \
     --run-id "$HILAAS_RUN_ID" \
     --ledger "$HILAAS_LEDGER_DIR" \
+    --bundle /opt/hilaas-native \
     --output /home/ubuntu/HILAAS-Demo/spread/mock/results
 artifacts:
   - results

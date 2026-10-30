@@ -10,6 +10,7 @@ include:
   - targets.json
   - pyproject.toml
   - tests/
+  - config/native-workshop/
 exclude:
   - "**/__pycache__/"
   - "**/*.pyc"
@@ -32,6 +33,8 @@ backends:
     type: adhoc
     allocate: |
       set +x
+      python3 -m hilaas.native || FATAL "Workshop native build failed; no job submitted"
+      export HILAAS_NATIVE_BUNDLE="$PWD/artifacts/$HILAAS_RUN_ID/build/bundle"
       response=$(HILAAS_MODE=mock python3 -m hilaas.worker allocate) || FATAL "Mock worker allocation failed"
       ADDRESS "${response#ADDRESS }"
     discard: |

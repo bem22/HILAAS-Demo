@@ -1,0 +1,13 @@
+name: hilaas-native-build
+base: ubuntu@24.04
+sdks:
+  - name: project-native-tools
+actions:
+  build: |
+    set -eu
+    cmake -S /project/firmware/native -B /project/build/native -DCMAKE_BUILD_TYPE=Release \
+      -DHILAAS_BUILD_COMMIT="${HILAAS_COMMIT:?}" \
+      -DHILAAS_BUILD_RUN_ID="${HILAAS_RUN_ID:?}" \
+      -DHILAAS_BUILD_NONCE="${HILAAS_NONCE:?}"
+    cmake --build /project/build/native --parallel 2
+    ctest --test-dir /project/build/native --output-on-failure

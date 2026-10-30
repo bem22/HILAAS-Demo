@@ -1,4 +1,4 @@
-"""Single-submit mock pipeline; deliberately independent of firmware builds."""
+"""Single-submit native laptop pipeline, separate from MCU firmware jobs."""
 
 import argparse
 import json
@@ -12,8 +12,9 @@ import uuid
 from urllib.parse import urlsplit
 
 from hilaas.bundle import read_json, require, unique_keys
-from hilaas.client import save
+from hilaas.client import attachment_archive, save
 from hilaas.mock_agent import QUEUE, TOKEN
+from hilaas.native import BINARY, MANIFEST, TOKEN as NATIVE_TOKEN, validate as validate_native, verify_output
 
 
 SUBMITTER = "hilaas-laptop-mock-submitter"
@@ -55,6 +56,7 @@ def verify_evidence(path, results, receipt):
         status = results.get(phase + "_status")
         require(type(status) is int and status == 0, f"Mock {phase} failed or missing")
     proof = None
+    native_output = None
     total = 0
     with tarfile.open(path) as archive:
         for index, member in enumerate(archive):
@@ -64,15 +66,27 @@ def verify_evidence(path, results, receipt):
                 require(proof is None and member.isfile() and member.size <= 65536, "Unsafe mock evidence")
                 with archive.extractfile(member) as stream:
                     proof = json.loads(stream.read(), object_pairs_hook=unique_keys)
+            if member.name == "artifacts/native-output.log":
+                require(native_output is None and member.isfile() and member.size <= 65536, "Unsafe native output")
+                with archive.extractfile(member) as stream:
+                    native_output = stream.read().decode()
     expected = {"kind": "mock", "status": "passed", "agent": QUEUE,
                 "job_id": receipt["job_id"], "run_id": receipt["run_id"], "nonce": receipt["nonce"],
                 "hardware": False, "flashed": False}
+    if receipt.get("kind") == "native":
+        expected.update(kind="native", commit=receipt["commit"], binary_sha256=receipt["binary_sha256"], exit_code=0, checks=5)
+        require(native_output is not None, "Missing native execution log")
+        verify_output(native_output, receipt)
     require(proof == expected, "Missing or mismatched mock evidence")
     return proof
 
 
-def execute(api, run_id, output, ledger_dir, timeout=180, clock=time.monotonic, wait=time.sleep):
+def execute(api, run_id, output, ledger_dir, timeout=180, clock=time.monotonic, wait=time.sleep, bundle=None):
     require(re.fullmatch(r"[A-Za-z0-9_-]{1,100}", run_id), "Invalid mock run ID")
+    manifest = captured = None
+    if bundle is not None:
+        manifest, captured = validate_native(bundle)
+        require(manifest["run_id"] == run_id, "Native bundle belongs to another run")
     output, ledger_dir = Path(output), Path(ledger_dir)
     output.mkdir(parents=True, exist_ok=True)
     ledger_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -87,6 +101,8 @@ def execute(api, run_id, output, ledger_dir, timeout=180, clock=time.monotonic, 
     require(not any(job.get("job_state") not in ("complete", "cancelled") for job in jobs), "Mock queue has outstanding work")
     receipt = {"kind": "mock", "job_id": str(uuid.uuid4()), "run_id": run_id,
                "nonce": secrets.token_hex(16), "stage": "submission_intent", "status": "pending"}
+    if manifest is not None:
+        receipt.update(kind="native", commit=manifest["commit"], nonce=manifest["nonce"], binary_sha256=manifest["binary_sha256"])
     with ledger.open("x") as stream:
         os.chmod(ledger, 0o600)
         json.dump(receipt, stream)
@@ -94,10 +110,18 @@ def execute(api, run_id, output, ledger_dir, timeout=180, clock=time.monotonic, 
         os.fsync(stream.fileno())
     job = dict(job_id=receipt["job_id"], job_queue=QUEUE, name=run_id,
                tags=[receipt["nonce"]], test_data={"test_cmds": TOKEN})
+    if manifest is not None:
+        job["tags"] += [manifest["binary_sha256"], manifest["commit"]]
+        job["test_data"] = {"test_cmds": NATIVE_TOKEN, "attachments": [{"agent": BINARY}, {"agent": MANIFEST}]}
     save(output / "receipt.json", receipt)
     try:
         response = api.request("POST", "/v1/job", json=job).json()
         require(response.get("job_id") == receipt["job_id"], "Server changed mock job ID")
+        if captured is not None:
+            receipt["stage"] = "attachments"
+            save(output / "receipt.json", receipt)
+            api.request("POST", "/v1/job/" + receipt["job_id"] + "/attachments",
+                        files={"file": ("native.tar.gz", attachment_archive(captured), "application/gzip")})
         print("Submitted mock job " + receipt["job_id"], flush=True)
         receipt["stage"] = "waiting"
         deadline = clock() + timeout
@@ -137,10 +161,13 @@ def main():
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--ledger", type=Path, required=True)
+    parser.add_argument("--bundle", type=Path, required=True)
     args = parser.parse_args()
     os.umask(0o077)
+    manifest, _ = validate_native(args.bundle)
+    require(manifest["commit"] == os.environ["HILAAS_COMMIT"], "Native binary is not from the dispatched commit")
     api = MockAPI(args.server, args.token_file)
-    result = execute(api, args.run_id, args.output, args.ledger)
+    result = execute(api, args.run_id, args.output, args.ledger, bundle=args.bundle)
     print(json.dumps(result))
 
 
