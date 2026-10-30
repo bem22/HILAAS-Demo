@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "queue": "hilaas-esp32c6-pi1",
+  "device_mac": "f0:f5:bd:01:83:1c",
+  "serial_port": "/dev/hilaas-mcu",
+  "partition_sha256": "7f00b6c042a89b15b0cac534f82ed988caf29278ff5700b0c511eb1b5bb7c820"
+}

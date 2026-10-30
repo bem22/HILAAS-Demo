@@ -80,6 +80,27 @@ def firmware_evidence(root, target, run_id, commit, mode, config_path):
     require(config_path is not None, "Private target configuration is required for hardware evidence")
     config = validate_config(read_json(config_path))
     require(digest(captured["partition-table.bin"]) == config["partition_sha256"], "Partition policy mismatch")
+    if (output / "hardware/summary.json").exists():
+        summary = read_json(output / "hardware/summary.json")
+        require(summary["status"] == "pass" and summary["run_id"] == run_id
+            and summary["commit"] == commit, "Incomplete firmware demo")
+        require(summary["selected"] in (["crc32"], ["uint32-wrap"], ["crc32", "uint32-wrap"]), "Invalid demo suites")
+        require([result["suite"] for result in summary["tests"]] == summary["selected"], "Missing suite result")
+        for result in summary["tests"]:
+            suite = result["suite"]
+            directory = output / "hardware" / suite
+            receipt = read_json(directory / "receipt.json")
+            require(receipt["status"] == "pass" and receipt["stage"] == "complete"
+                and receipt["run_id"] == run_id + "-" + suite
+                and receipt["target"] == target and receipt["manifest_sha256"] == digest(manifest_bytes),
+                "Invalid suite receipt")
+            proof = verify_firmware_evidence(directory / "artifacts.tar.gz",
+                             read_json(directory / "phase-results.json"), manifest_bytes,
+                             dict(config, suite=suite))
+            require(result["status"] == "pass" and result["job_id"] == receipt["job_id"]
+                and result["proof"] == receipt["proof"] == proof, "Suite proof mismatch")
+            rows.append((suite + " / Testflinger job", "PASS / " + receipt["job_id"]))
+        return rows
     receipt = read_json(output / "hardware/receipt.json")
     require(receipt["target"] == target and receipt["run_id"] == run_id, "Target/run identity mismatch")
     require(receipt["manifest_sha256"] == digest(manifest_bytes), "Firmware identity mismatch")

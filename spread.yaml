@@ -21,6 +21,7 @@ environment:
   HILAAS_RUN_ID: $(HOST:printf '%s' "$HILAAS_RUN_ID")
   HILAAS_RUN_ATTEMPT: $(HOST:printf '%s' "${HILAAS_RUN_ATTEMPT:-1}")
   HILAAS_MODE: $(HOST:printf '%s' "${HILAAS_MODE:-build}")
+  HILAAS_TEST_SUITE: $(HOST:printf '%s' "${HILAAS_TEST_SUITE:-both}")
   HILAAS_ENABLE_HARDWARE: $(HOST:printf '%s' "${HILAAS_ENABLE_HARDWARE:-no}")
   HILAAS_ALLOW_DOWNLOADS: $(HOST:printf '%s' "${HILAAS_ALLOW_DOWNLOADS:-no}")
   HILAAS_CLIENT_CONFIG: /etc/hilaas/client.json
@@ -58,6 +59,9 @@ backends:
     type: adhoc
     allocate: |
       set +x
+      python3 -m hilaas.cli host-build --output "artifacts/$HILAAS_RUN_ID/build" || FATAL "C6 Workshop build failed; no job submitted"
+      export HILAAS_FIRMWARE_BUNDLE="$PWD/artifacts/$HILAAS_RUN_ID/build/bundle"
+      export HILAAS_WORKER_TYPE=container
       response=$(python3 -m hilaas.worker allocate) || FATAL "HILAAS worker allocation failed"
       ADDRESS "${response#ADDRESS }"
     discard: |

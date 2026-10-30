@@ -23,6 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--smoke-submitter", action="store_true")
+    parser.add_argument("--c6-demo", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     os.umask(0o077)
@@ -46,6 +47,27 @@ def main():
         application, uri=database.get_mongo_uri(), serverSelectionTimeoutMS=10000,
     )
     with application.app_context():
+        if args.c6_demo:
+            client_id = "hilaas-c6-demo-submitter"
+            queue = "hilaas-esp32c6-pi1"
+            owners = database.get_restricted_queues_owners()
+            if database.check_client_exists(client_id) or set(owners.get(queue, [])) != {CLIENT_ID, SMOKE_SUBMITTER}:
+                raise ValueError("Unexpected demo account or queue ownership; refusing replacement")
+            if args.check:
+                print(json.dumps({"client_id": client_id, "queue": queue, "ready": True}))
+                return
+            if args.output is None or args.output.exists():
+                raise ValueError("A fresh private output path is required")
+            args.output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with args.output.open("x") as stream:
+                database.create_or_update_client_permissions(client_id, {
+                    "client_id": client_id, "role": "contributor", "allowed_queues": [queue],
+                    "max_priority": {queue: 0}, "max_reservation_time": {queue: 0},
+                })
+                token = generate_refresh_token(client_id, expires_in=86400)
+                json.dump({"client_id": client_id, "refresh_token": token}, stream)
+            print("C6-only demo contributor created; 24-hour token saved privately")
+            return
         if args.smoke_submitter:
             if database.check_client_exists(SMOKE_SUBMITTER):
                 raise ValueError("Smoke submitter already exists; refusing replacement")

@@ -1,0 +1,10 @@
+{
+  "server": "http://10.152.183.194:5000",
+  "allow_trusted_http": true,
+  "queue": "hilaas-esp32c6-pi1",
+  "agent": "hilaas-pi1-c6",
+  "submitter": "hilaas-c6-demo-submitter",
+  "queue_owners": ["testflinger-agent", "hilaas-pi-smoke-submitter", "hilaas-c6-demo-submitter"],
+  "device_mac": "f0:f5:bd:01:83:1c",
+  "partition_sha256": "7f00b6c042a89b15b0cac534f82ed988caf29278ff5700b0c511eb1b5bb7c820"
+}

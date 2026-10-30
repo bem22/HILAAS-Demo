@@ -13,6 +13,20 @@ from test_bundle import BundleFixture
 
 
 class DeviceTests(BundleFixture, unittest.TestCase):
+    def test_two_firmware_demo_tests(self):
+        source = Path(__file__).resolve().parents[1] / "firmware/common/selftest.c"
+        binary = self.directory / "demo-tests"
+        subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(source),
+                        "-x", "c", "-", "-o", str(binary)],
+                       input='void hilaas_demo_tests(const char *nonce);\n'
+                             'int main(void) { hilaas_demo_tests("0123456789abcdef0123456789abcdef"); return 0; }\n',
+                       text=True, check=True, capture_output=True)
+        result = subprocess.run([str(binary)], text=True, check=True, capture_output=True)
+        self.assertEqual(result.stdout.splitlines(), [
+            "HILAAS_TEST_V1 nonce=0123456789abcdef0123456789abcdef name=crc32 status=pass actual=cbf43926 expected=cbf43926",
+            "HILAAS_TEST_V1 nonce=0123456789abcdef0123456789abcdef name=uint32-wrap status=pass actual=00000000 expected=00000000",
+        ])
+
     def setUp(self):
         super().setUp()
         self.config = {"enabled": True, "device_mac": "01:23:45:67:89:ab", "queue": "hilaas-c6", "partition_sha256": digest(b"partition")}
@@ -26,6 +40,16 @@ class DeviceTests(BundleFixture, unittest.TestCase):
 
     def test_valid_confirmation(self):
         self.assertEqual(self.check()[0], self.manifest)
+
+    def test_suite_confirmation(self):
+        self.job["tags"] = ["crc32"]
+        with self.assertRaisesRegex(ValueError, "confirmation"):
+            self.check()
+        self.job["test_data"]["test_cmds"] += " crc32"
+        self.assertEqual(self.check()[0], self.manifest)
+        self.job["tags"] = ["arbitrary"]
+        with self.assertRaisesRegex(ValueError, "suite"):
+            self.check()
 
     def test_disabled_device(self):
         self.config["enabled"] = False

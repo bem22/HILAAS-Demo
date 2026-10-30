@@ -15,7 +15,7 @@ import pytest
 import serial
 
 from hilaas.bundle import FLASH_FILES, TARGET, digest, read_json, require
-from hilaas.client import serial_proof
+from hilaas.client import firmware_tests, serial_proof
 from hilaas.device import preflight
 
 
@@ -24,6 +24,9 @@ def assigned_device():
     config = read_json(Path(os.environ["HILAAS_DEVICE_CONFIG"]))
     directory = Path(os.environ["HILAAS_BUNDLE"])
     manifest, captured, manifest_bytes = preflight(directory, Path(os.environ["HILAAS_JOB"]), config)
+    tags = read_json(Path(os.environ["HILAAS_JOB"])).get("tags", [])
+    if tags:
+        config = dict(config, suite=tags[0])
     port = Path(config["serial_port"]).resolve(strict=True)
     device_stat = port.stat()
     require(stat.S_ISCHR(device_stat.st_mode), "Configured port is not a character device")
@@ -77,10 +80,14 @@ def test_flash_and_serial_proof(assigned_device):
             log.flush()
             try:
                 sequences = serial_proof(text, manifest["nonce"], config["device_mac"])
+                if config.get("suite"):
+                    firmware_tests(text, manifest["nonce"], config["suite"])
                 break
             except ValueError:
                 continue
     require(sequences is not None, "Timed out waiting for fresh firmware proof")
     proof = {"target": TARGET, "nonce": manifest["nonce"], "device_mac": config["device_mac"],
              "manifest_sha256": digest(manifest_bytes), "flash_count": 1, "sequences": sequences}
+    if config.get("suite"):
+        proof["tests"] = firmware_tests(text, manifest["nonce"], config["suite"])
     (output / "proof.json").write_text(json.dumps(proof, indent=2) + "\n")

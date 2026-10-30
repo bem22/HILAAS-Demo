@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from hilaas.bundle import FLASH_FILES, TARGET, digest
 from hilaas import progress
-from hilaas.client import execute, serial_proof, validate_config, verify_evidence
+from hilaas.client import execute, firmware_tests, serial_proof, validate_config, verify_evidence
 from hilaas.showcase import report
 from test_bundle import BundleFixture
 
@@ -67,6 +67,47 @@ class ClientTests(BundleFixture, unittest.TestCase):
         self.assertEqual(serial_proof(lines, self.nonce, self.config["device_mac"]), [7, 8, 9])
         with self.assertRaises(ValueError):
             serial_proof(lines, "c" * 32, self.config["device_mac"])
+
+    def test_firmware_test_requires_fresh_passing_values(self):
+        line = f"HILAAS_TEST_V1 nonce={self.nonce} name=crc32 status=pass actual=cbf43926 expected=cbf43926"
+        self.assertEqual(firmware_tests(line, self.nonce, "crc32")["crc32"]["status"], "pass")
+        for text, nonce, suite in ((line, "c" * 32, "crc32"), (line, self.nonce, "uint32-wrap"),
+                                   (line.replace("status=pass", "status=fail"), self.nonce, "crc32"),
+                                   (line.replace("cbf43926", "00000000"), self.nonce, "crc32")):
+            with self.subTest(text=text, nonce=nonce, suite=suite), self.assertRaises(ValueError):
+                firmware_tests(text, nonce, suite)
+
+    def test_suite_is_bound_to_job_confirmation(self):
+        self.config["suite"] = "crc32"
+        self.api.request.side_effect = TimeoutError("simulated")
+        with self.assertRaises(TimeoutError):
+            self.run_job()
+        payload = self.api.request.call_args.kwargs["json"]
+        self.assertEqual(payload["tags"], ["crc32"])
+        self.assertTrue(payload["test_data"]["test_cmds"].endswith(" crc32"))
+
+    def test_demo_submits_two_suites_and_writes_report(self):
+        from hilaas.demo import run_suites
+        self.api.get_json.side_effect = None
+        self.api.get_json.return_value = {"state": "waiting", "job": {}}
+        with patch("hilaas.demo.execute", return_value={"job_id": "test-job", "proof": {}}) as submit:
+            summary = run_suites(self.directory, self.config, self.api, "demo", "b" * 40,
+                                 self.ledger, self.output)
+        self.assertEqual(summary["status"], "pass")
+        self.assertEqual([call.args[1]["suite"] for call in submit.call_args_list], ["crc32", "uint32-wrap"])
+        self.assertEqual([call.args[3] for call in submit.call_args_list], ["demo-crc32", "demo-uint32-wrap"])
+        self.assertTrue((self.output / "junit.xml").is_file())
+        with self.assertRaisesRegex(ValueError, "already attempted"):
+            run_suites(self.directory, self.config, self.api, "demo", "b" * 40, self.ledger, self.output)
+
+    def test_demo_stops_on_ambiguous_submission(self):
+        from hilaas.demo import run_suites
+        with patch("hilaas.demo.execute", side_effect=TimeoutError("ambiguous")) as submit:
+            with self.assertRaises(TimeoutError):
+                run_suites(self.directory, self.config, self.api, "demo", "b" * 40, self.ledger, self.output)
+        self.assertEqual(submit.call_count, 1)
+        summary = json.loads((self.output / "summary.json").read_text())
+        self.assertEqual([result["status"] for result in summary["tests"]], ["fail", "not-run"])
 
     def evidence(self):
         manifest_bytes = (self.directory / "manifest.json").read_bytes()

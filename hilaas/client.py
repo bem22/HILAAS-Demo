@@ -120,12 +120,34 @@ def verify_evidence(path, results, manifest_bytes, config):
     expected = {"target": TARGET, "nonce": manifest["nonce"], "device_mac": config["device_mac"],
                 "manifest_sha256": digest(manifest_bytes), "flash_count": 1,
                 "sequences": serial_proof(captured["artifacts/serial.log"].decode(), manifest["nonce"], config["device_mac"])}
+    if config.get("suite"):
+        expected["tests"] = firmware_tests(captured["artifacts/serial.log"].decode(), manifest["nonce"], config["suite"])
     require(proof == expected, "Hardware proof does not match submission")
     return proof
 
 
+def firmware_tests(text, nonce, suite):
+    expected_values = {"crc32": "cbf43926", "uint32-wrap": "00000000"}
+    require(suite in expected_values, "Unknown firmware test suite")
+    pattern = re.compile(r"HILAAS_TEST_V1 nonce=([0-9a-f]{32}) name=([a-z0-9-]+) status=(pass|fail) actual=([0-9a-f]{8}) expected=([0-9a-f]{8})")
+    found = False
+    for line in text.splitlines():
+        match = pattern.fullmatch(line.strip())
+        if not match:
+            continue
+        actual_nonce, name, status, actual, expected = match.groups()
+        if actual_nonce != nonce or name != suite:
+            continue
+        require(status == "pass" and actual == expected == expected_values[suite], "Firmware test failed")
+        found = True
+    require(found, "Missing fresh firmware test result")
+    return {suite: {"status": "pass", "actual": expected_values[suite], "expected": expected_values[suite]}}
+
+
 def execute(directory, config, api, run_id, commit, ledger_dir, output, timeout=600, clock=time.monotonic, wait=time.sleep):
     config = validate_config(config)
+    suite = config.get("suite")
+    require(suite is None or suite in ("crc32", "uint32-wrap"), "Unknown firmware test suite")
     require(re.fullmatch(r"[A-Za-z0-9_-]{1,100}", run_id), "Invalid run ID")
     directory, output, ledger_dir = Path(directory), Path(output), Path(ledger_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -143,7 +165,9 @@ def execute(directory, config, api, run_id, commit, ledger_dir, output, timeout=
         raise RuntimeError(f"Submission already attempted: {previous['job_id']}; inspect it before a new run")
     with stage("testflinger.preflight"):
         restriction = api.get_json("/v1/restricted-queues/" + config["queue"])
-        require(restriction and restriction.get("owners") == [config["submitter"]], "Queue must be restricted to the dedicated submitter")
+        owners = config.get("queue_owners", [config["submitter"]])
+        require(config["submitter"] in owners and restriction
+            and set(restriction.get("owners", [])) == set(owners), "Queue must be restricted to the configured owners")
         agent = api.get_json("/v1/agents/data/" + config["agent"])
         require(agent and agent.get("state") == "waiting" and not agent.get("job"), "Expected idle registered agent")
         require(agent.get("queues") == [config["queue"]], "Unexpected agent queue configuration")
@@ -168,6 +192,9 @@ def execute(directory, config, api, run_id, commit, ledger_dir, output, timeout=
         job = {"job_id": job_id, "job_queue": config["queue"], "test_data": {
             "test_cmds": f"HILAAS_C6 {config['device_mac']} {manifest['nonce']} {digest(manifest_bytes)}",
             "attachments": [{"agent": name} for name in captured]}}
+        if suite:
+            job.update(name=run_id, tags=[suite])
+            job["test_data"]["test_cmds"] += " " + suite
         with stage("testflinger.submit"):
             response = api.request("POST", "/v1/job", json=job).json()
             require(response.get("job_id") == job_id, "Server changed the requested job ID")

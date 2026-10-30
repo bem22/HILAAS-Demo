@@ -268,7 +268,8 @@ class SpreadTests(unittest.TestCase):
 
     def test_matrix_only_enables_known_c6(self):
         task = yaml.safe_load((ROOT / "spread/boards/task.yaml").read_text())
-        self.assertEqual(task["environment"], {"HILAAS_TARGET/esp32c6": "esp32c6-devkitc-1"})
+        self.assertEqual(task["environment"], {"HILAAS_TARGET/esp32c6": "esp32c6-devkitc-1",
+                               "HILAAS_FIRMWARE_BUNDLE": "/opt/hilaas-firmware"})
         targets = json.loads((ROOT / "targets.json").read_text())
         self.assertEqual([name for name, target in targets.items() if target["enabled"] and target.get("kind") == "mcu"], ["esp32c6-devkitc-1"])
         self.assertEqual(targets["laptop"]["adapter"], "native")

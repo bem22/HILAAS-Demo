@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 
 from hilaas.bundle import read_json, require
+from hilaas.bundle import FLASH_FILES, validate as validate_firmware
 from hilaas.client import save
 from hilaas.native import BINARY, MANIFEST, validate as validate_native
 from hilaas.progress import tracked
@@ -54,6 +55,11 @@ def discard(path):
 @tracked("worker.allocate")
 def allocate(path):
     mock = os.environ.get("HILAAS_MODE") == "mock"
+    firmware_bundle = None
+    if os.environ.get("HILAAS_FIRMWARE_BUNDLE"):
+        firmware_bundle = Path(os.environ["HILAAS_FIRMWARE_BUNDLE"]).resolve(strict=True)
+        manifest, _ = validate_firmware(firmware_bundle)
+        require(manifest["commit"] == os.environ["HILAAS_COMMIT"], "Firmware source mismatch")
     fingerprint = os.environ.get("HILAAS_MOCK_WORKER_IMAGE" if mock else "HILAAS_WORKER_IMAGE", "")
     require(re.fullmatch(r"[0-9a-f]{64}", fingerprint), "HILAAS_WORKER_IMAGE must be a cached local VM image fingerprint")
     worker_type = "container" if mock else os.environ.get("HILAAS_WORKER_TYPE", "virtual-machine")
@@ -86,7 +92,7 @@ def allocate(path):
         options = ["--vm", "-c", "limits.memory=6GiB", "-d", "root,size=40GiB"]
         if worker_type == "container":
             options = ["-c", "security.nesting=true", "-c", "limits.memory=4GiB"]
-        if mock:
+        if mock or firmware_bundle is not None:
             options = ["-c", "security.nesting=false", "-c", "security.privileged=false", "-c", "limits.memory=512MiB"]
         lxc("init", fingerprint, name, *options, "-c", "limits.cpu=2",
             "-c", "user.hilaas-owner=" + owner)
@@ -119,7 +125,11 @@ def allocate(path):
             require(time.monotonic() < deadline, f"VM did not acquire an address: {name}")
             time.sleep(2)
         marker = lxc("exec", name, "--", "cat", "/etc/hilaas-spread-template").stdout.strip()
-        require(marker == ("mock-v1" if mock else "v1"), "Image is not an approved HILAAS disposable worker template")
+        require(marker == ("mock-v1" if mock or firmware_bundle is not None else "v1"), "Image is not an approved HILAAS disposable worker template")
+        if firmware_bundle is not None:
+            lxc("exec", name, "--", "install", "-d", "-m", "755", "/opt/hilaas-firmware")
+            for filename in (*FLASH_FILES, "manifest.json"):
+                lxc("file", "push", "--mode=0644", str(firmware_bundle / filename), name + "/opt/hilaas-firmware/" + filename)
         if mock:
             lxc("exec", name, "--", "install", "-d", "-m", "700", "/etc/hilaas-mock")
             lxc("file", "push", "--mode=0600", str(mock_token), name + "/etc/hilaas-mock/submitter.json")

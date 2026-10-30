@@ -12,9 +12,14 @@ on:
         type: boolean
         default: false
       flash_and_test:
-        description: Authorize one physical MCU firmware job
+        description: Authorize flashing once per selected firmware test
         type: boolean
         default: false
+      test_suite:
+        description: Firmware tests to submit as individual jobs
+        type: choice
+        options: [both, crc32, uint32-wrap]
+        default: both
       allow_downloads:
         description: Allow MCU SDK setup and build downloads
         type: boolean
@@ -34,10 +39,11 @@ jobs:
       HILAAS_RUN_ID: github-${{ github.run_id }}
       HILAAS_COMMIT: ${{ github.sha }}
       HILAAS_TARGET: ${{ inputs.target }}
+      HILAAS_TEST_SUITE: ${{ inputs.test_suite }}
       HILAAS_MODE: ${{ inputs.preliminary_build && 'preliminary' || inputs.target == 'laptop' && 'mock' || inputs.flash_and_test && 'hardware' || 'build' }}
       HILAAS_ENABLE_HARDWARE: ${{ inputs.flash_and_test && 'yes' || 'no' }}
       HILAAS_ALLOW_DOWNLOADS: ${{ inputs.allow_downloads && 'yes' || 'no' }}
-      HILAAS_WORKER_IMAGE: ${{ vars.HILAAS_WORKER_IMAGE }}
+      HILAAS_WORKER_IMAGE: ${{ vars.HILAAS_WORKER_IMAGE || '3c9090e9657b2f4bca98345178c44718c1e0776d0ffe2d230b13a5f0d39b2845' }}
       HILAAS_CLIENT_CONFIG: ${{ vars.HILAAS_CLIENT_CONFIG }}
       HILAAS_AUTH_DIR: ${{ vars.HILAAS_AUTH_DIR }}
       REPORT_MODE: ${{ inputs.preliminary_build && 'preliminary' || inputs.target == 'laptop' && 'native' || inputs.flash_and_test && 'hardware' || 'build' }}
@@ -77,6 +83,12 @@ jobs:
           fi
           python3 -m hilaas.showcase --report "artifacts/$HILAAS_RUN_ID" --outcome "$PIPELINE_OUTCOME" \
             --target "$HILAAS_TARGET" --mode "$REPORT_MODE" "${arguments[@]}"
+      - name: Firmware test results
+        if: always() && inputs.flash_and_test && inputs.target == 'esp32c6-devkitc-1'
+        shell: bash
+        run: |
+          report="artifacts/$HILAAS_RUN_ID/targets/$HILAAS_TARGET/hardware/report.md"
+          if [[ -f "$report" ]]; then cat "$report" >> "$GITHUB_STEP_SUMMARY"; fi
       - name: "5. Publish: architecture, stage events, target bundle, and evidence"
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

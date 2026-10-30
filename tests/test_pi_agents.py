@@ -34,11 +34,15 @@ def test_pi_agents_have_unique_scoped_fail_closed_configs():
         queue = config["job_queues"][0]
         assert queue not in queues
         queues.add(queue)
-        assert "execution disabled" in config["advertised_queues"][queue]
         command = ("/usr/bin/env PYTHONPATH=/srv/agent-configs /srv/testflinger-venv/bin/python "
                    "/srv/agent-configs/hilaas/pi_smoke.py --agent " + config["agent_id"])
-        assert config["setup_command"] == command + " --validate-only"
-        assert config["test_command"] == command
+        if config["agent_id"] == "hilaas-pi1-c6":
+            assert config["setup_command"] == "/usr/bin/env HILAAS_DEVICE_CONFIG=/etc/hilaas/esp32c6.json /opt/hilaas-demo/.venv/bin/python -I -m hilaas.device"
+            assert config["test_command"] == "/bin/bash /opt/hilaas-demo/agent/run-c6.sh"
+        else:
+            assert "execution disabled" in config["advertised_queues"][queue]
+            assert config["setup_command"] == command + " --validate-only"
+            assert config["test_command"] == command
         assert config["provision_command"] == "/bin/true"
         assert config["cleanup_command"] == "/bin/true"
         assert yaml.safe_load((path.parent / "default.yaml").read_text()) == {

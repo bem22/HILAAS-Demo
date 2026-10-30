@@ -25,6 +25,19 @@ static int check(const char *name, uint32_t actual, uint32_t expected)
     return actual == expected ? 0 : 1;
 }
 
+void hilaas_demo_tests(const char *nonce)
+{
+    static const uint8_t digits[] = "123456789";
+    volatile uint32_t maximum = UINT32_MAX;
+    uint32_t crc = ~crc32_update(UINT32_MAX, digits, sizeof(digits) - 1);
+    uint32_t wrapped = maximum + UINT32_C(1);
+    printf("HILAAS_TEST_V1 nonce=%s name=crc32 status=%s actual=%08" PRIx32
+        " expected=cbf43926\n", nonce, crc == UINT32_C(0xcbf43926) ? "pass" : "fail", crc);
+    printf("HILAAS_TEST_V1 nonce=%s name=uint32-wrap status=%s actual=%08" PRIx32
+        " expected=00000000\n", nonce, wrapped == 0 ? "pass" : "fail", wrapped);
+    fflush(stdout);
+}
+
 int hilaas_selftest(void)
 {
     static const uint8_t digits[] = "123456789";
