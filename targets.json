@@ -1,0 +1,22 @@
+{
+  "esp32c6-devkitc-1": {
+    "enabled": true,
+    "chip": "esp32c6",
+    "architecture": "riscv32",
+    "build_sdk": "ESP-IDF v5.5.3",
+    "harness": "pytest"
+  },
+  "microbit": {
+    "enabled": false,
+    "reason": "V1 and V2 requested; board builds and hardware integration are not yet validated",
+    "board_revisions": ["v1", "v2"],
+    "sdk_channel": "26.04/stable",
+    "harness": "twister"
+  },
+  "nucleo": {
+    "enabled": false,
+    "reason": "Exact Nucleo model and Zephyr board identifier are not confirmed",
+    "sdk_channel": "26.04/stable",
+    "harness": "twister"
+  }
+}

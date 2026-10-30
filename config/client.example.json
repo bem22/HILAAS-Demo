@@ -1,0 +1,9 @@
+{
+  "server": "https://REPLACE_WITH_REACHABLE_TESTFLINGER",
+  "allow_trusted_http": false,
+  "queue": "hilaas-esp32c6-pi1",
+  "agent": "hilaas-pi1-c6",
+  "submitter": "hilaas-demo-submitter",
+  "device_mac": "REPLACE_WITH_PHYSICAL_C6_MAC",
+  "partition_sha256": "REPLACE_WITH_REVIEWED_PARTITION_TABLE_SHA256"
+}

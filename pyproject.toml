@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hilaas-demo"
+version = "0.1.0"
+description = "Spread, Workshop and Testflinger MCU demo"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+client = ["testflinger-cli", "requests>=2.32.3,<3", "PyJWT>=2,<3"]
+agent = ["pytest>=8,<10", "esptool==4.8.1", "pyserial==3.5"]
+test = ["pytest>=8,<10", "PyYAML>=6,<7"]
+
+[tool.setuptools.packages.find]
+include = ["hilaas*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

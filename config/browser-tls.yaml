@@ -1,0 +1,30 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: hilaas-letsencrypt
+  namespace: testflinger
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: hilaas-letsencrypt-account
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: public
+            serviceType: ClusterIP
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hilaas-browser
+  namespace: testflinger
+spec:
+  secretName: hilaas-browser-tls
+  dnsNames:
+    - testflinger.16-16-193-47.sslip.io
+  issuerRef:
+    name: hilaas-letsencrypt
+    kind: Issuer
+  privateKey:
+    rotationPolicy: Always

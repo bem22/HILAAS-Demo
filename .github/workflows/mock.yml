@@ -1,0 +1,37 @@
+name: HILAAS laptop mock
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hilaas-laptop-mock
+  cancel-in-progress: false
+jobs:
+  mock:
+    if: github.repository == 'bem22/HILAAS-Demo' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, hilaas-demo]
+    timeout-minutes: 15
+    env:
+      HILAAS_RUN_ID: github-${{ github.run_id }}
+      HILAAS_COMMIT: ${{ github.sha }}
+      HILAAS_MOCK_WORKER_IMAGE: ${{ vars.HILAAS_MOCK_WORKER_IMAGE || '3c9090e9657b2f4bca98345178c44718c1e0776d0ffe2d230b13a5f0d39b2845' }}
+    steps:
+      - name: Check out the dispatched source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Run source tests and laptop mock through Spread
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          bash scripts/run-mock-spread.sh
+      - name: Upload mock receipts and evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mock-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/github-${{ github.run_id }}/
+          if-no-files-found: warn
+          retention-days: 14

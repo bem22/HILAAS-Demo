@@ -1,0 +1,14 @@
+agent_id: hilaas-pi1-c6
+server_address: https://REPLACE_WITH_REACHABLE_TESTFLINGER
+logging_level: INFO
+polling_interval: 10
+job_queues:
+  - hilaas-esp32c6-pi1
+execution_basedir: /home/ubuntu/hilaas/pi1-c6/run
+results_basedir: /home/ubuntu/hilaas/pi1-c6/results
+logging_basedir: /home/ubuntu/hilaas/pi1-c6/logs
+provision_type: noprovision
+setup_command: /bin/true
+provision_command: /bin/true
+test_command: /bin/bash /opt/hilaas-demo/agent/run-c6.sh
+cleanup_command: /bin/true

@@ -1,0 +1,20 @@
+summary: Build and optionally test an explicitly configured MCU
+backends: [local-vm]
+environment:
+  HILAAS_TARGET/esp32c6: esp32c6-devkitc-1
+prepare: |
+  test "$HILAAS_ALLOW_DOWNLOADS" = yes || { echo "Explicit SDK/download permission required"; exit 1; }
+  test "$(cat /etc/hilaas-spread-template)" = v1
+  command -v workshop
+  test -x /opt/hilaas-client/bin/python
+  cd /home/ubuntu/HILAAS-Demo
+  chmod +x .workshop/build-prereqs/hooks/setup-base
+  chown -R 1000:1000 .
+  workshop launch
+execute: |
+  cd /home/ubuntu/HILAAS-Demo
+  /opt/hilaas-client/bin/python -m hilaas.cli run \
+    --target "$HILAAS_TARGET" --mode "$HILAAS_MODE" \
+    --output /home/ubuntu/HILAAS-Demo/spread/boards/results
+artifacts:
+  - results

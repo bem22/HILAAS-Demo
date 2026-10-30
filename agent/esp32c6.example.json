@@ -1,0 +1,7 @@
+{
+  "enabled": false,
+  "queue": "hilaas-esp32c6-pi1",
+  "device_mac": "REPLACE_WITH_PHYSICAL_C6_MAC",
+  "serial_port": "/dev/serial/by-id/REPLACE_WITH_C6_UART_BRIDGE",
+  "partition_sha256": "REPLACE_WITH_REVIEWED_PARTITION_TABLE_SHA256"
+}

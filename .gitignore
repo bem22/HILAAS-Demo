@@ -1,0 +1,12 @@
+.venv/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+*.pyc
+build/
+artifacts/
+.spread-reuse.*
+sdkconfig
+sdkconfig.old
+managed_components/
+.workshop.lock

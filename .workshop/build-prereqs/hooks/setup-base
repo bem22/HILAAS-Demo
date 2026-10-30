@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+[[ "$(dpkg --print-architecture)" == amd64 ]]
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq ca-certificates curl
+temporary=$(mktemp -d)
+trap 'rm -rf -- "$temporary"' EXIT
+cd "$temporary"
+archive=uv-x86_64-unknown-linux-gnu.tar.gz
+curl --fail --location --silent --show-error --connect-timeout 10 --max-time 120 \
+  "https://github.com/astral-sh/uv/releases/download/0.8.22/$archive" --output "$archive"
+printf '%s  %s\n' 741ff1f5742c5a4a25d2f829e8395355e43f7a5ae2ebc6368e9ae2df0efb69cf "$archive" | sha256sum --check -
+tar -xzf "$archive"
+install -m 0755 uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv

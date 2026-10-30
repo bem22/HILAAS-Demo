@@ -1,0 +1,58 @@
+name: hilaas
+services:
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    command: [mongod, --wiredTigerCacheSizeGB, '0.25']
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: testflinger
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD:?A generated database password is required}
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    mem_limit: 768m
+    healthcheck:
+      test: [CMD, mongosh, --quiet, --eval, 'quit(db.adminCommand({ping: 1}).ok ? 0 : 1)']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  testflinger:
+    build:
+      context: /opt/testflinger-src/server
+      additional_contexts:
+        common: /opt/testflinger-src/common
+    restart: unless-stopped
+    environment:
+      MONGODB_HOST: mongo
+      MONGODB_DATABASE: testflinger_db
+      MONGODB_AUTH_SOURCE: admin
+      MONGODB_USERNAME: testflinger
+      MONGODB_PASSWORD: ${MONGODB_PASSWORD:?A generated database password is required}
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:?A generated JWT signing key is required}
+      TESTFLINGER_SECRETS_MASTER_KEY: ${TESTFLINGER_SECRETS_MASTER_KEY:?A generated secrets master key is required}
+      WEB_SECRET_KEY: ${WEB_SECRET_KEY:?A generated web secret is required}
+    command: [--workers, '1', --threads, '4', --timeout, '120']
+    ports:
+      - '5000:5000'
+    mem_limit: 768m
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:5000/v1/queues]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+volumes:
+  mongo-data:
+  mongo-config:

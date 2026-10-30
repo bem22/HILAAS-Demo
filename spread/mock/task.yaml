@@ -1,0 +1,22 @@
+summary: Source-level mock test delivered to the laptop by Testflinger
+backends: [mock-container]
+environment:
+  HILAAS_TARGET/laptop: hilaas-laptop-mock
+prepare: |
+  test "$HILAAS_MODE" = mock
+  test "$HILAAS_ENABLE_HARDWARE" = no
+  test "$(cat /etc/hilaas-spread-template)" = mock-v1
+  cd /home/ubuntu/HILAAS-Demo
+  python3 -m pytest tests/test_mock.py -q
+execute: |
+  cd /home/ubuntu/HILAAS-Demo
+  python3 -m hilaas.mock_client \
+    --server "$HILAAS_MOCK_SERVER" \
+    --token-file /etc/hilaas-mock/submitter.json \
+    --run-id "$HILAAS_RUN_ID" \
+    --ledger "$HILAAS_LEDGER_DIR" \
+    --output /home/ubuntu/HILAAS-Demo/spread/mock/results
+artifacts:
+  - results
+warn-timeout: 2m
+kill-timeout: 5m

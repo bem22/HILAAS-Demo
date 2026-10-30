@@ -1,0 +1,24 @@
+name: hilaas-zephyr-tools
+base: ubuntu@26.04
+sdks:
+  - name: uv
+    channel: latest/stable
+  - name: zephyr
+    channel: 26.04/stable
+  - name: zephyr-sdk-ng
+    channel: 1.0.1/stable
+  - name: zephyr-arm
+    channel: 1.0.1/stable
+connections:
+  - plug: zephyr:sdk-ng
+    slot: zephyr-sdk-ng:sdk-ng
+  - plug: zephyr-sdk-ng:arm
+    slot: zephyr-arm:toolchain
+  - plug: zephyr:venv
+    slot: uv:venv
+actions:
+  check-tools: |-
+    set -eu
+    west --version
+    "$ZEPHYR_SDK_INSTALL_DIR/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc" --version
+    west boards | grep '^bbc_microbit'

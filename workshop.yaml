@@ -1,0 +1,7 @@
+name: hilaas-c6-build
+base: ubuntu@24.04
+sdks:
+  - name: project-build-prereqs
+  - name: try-freertos-esp-idf
+actions:
+  build: bash /project/scripts/build-c6.sh

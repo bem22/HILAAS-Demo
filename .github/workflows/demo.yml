@@ -1,0 +1,48 @@
+name: HILAAS MCU demo
+on:
+  workflow_dispatch:
+    inputs:
+      flash_and_test:
+        description: Submit one firmware job to the configured physical C6
+        type: boolean
+        default: false
+      allow_downloads:
+        description: Allow VM SDK setup and build downloads on an unmetered connection
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: hilaas-physical-lab
+  cancel-in-progress: false
+jobs:
+  spread:
+    if: github.repository == 'bem22/HILAAS-Demo' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, hilaas-demo]
+    timeout-minutes: 70
+    env:
+      HILAAS_MODE: ${{ inputs.flash_and_test && 'hardware' || 'build' }}
+      HILAAS_ENABLE_HARDWARE: ${{ inputs.flash_and_test && 'yes' || 'no' }}
+      HILAAS_ALLOW_DOWNLOADS: ${{ inputs.allow_downloads && 'yes' || 'no' }}
+      HILAAS_RUN_ID: ${{ github.run_id }}
+      HILAAS_WORKER_IMAGE: ${{ vars.HILAAS_WORKER_IMAGE }}
+      HILAAS_CLIENT_CONFIG: ${{ vars.HILAAS_CLIENT_CONFIG }}
+      HILAAS_AUTH_DIR: ${{ vars.HILAAS_AUTH_DIR }}
+    steps:
+      - name: Check dedicated checkout and execute Spread
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$HOME/code/HILAAS-Demo"
+          [[ "$(git branch --show-current)" == main ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ -z "$(git status --porcelain --untracked-files=normal)" ]]
+          bash scripts/run-spread.sh "$HILAAS_MODE"
+      - name: Upload build and hardware evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hilaas-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ~/code/HILAAS-Demo/artifacts/${{ github.run_id }}/
+          if-no-files-found: warn
+          retention-days: 14

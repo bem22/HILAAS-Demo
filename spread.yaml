@@ -1,0 +1,59 @@
+project: hilaas-demo
+path: /home/ubuntu/HILAAS-Demo
+include:
+  - hilaas/
+  - firmware/
+  - scripts/
+  - spread/
+  - .workshop/
+  - workshop.yaml
+  - targets.json
+  - pyproject.toml
+  - tests/
+exclude:
+  - "**/__pycache__/"
+  - "**/*.pyc"
+  - "**/build/"
+  - "**/results/"
+environment:
+  HILAAS_COMMIT: $(HOST:printf '%s' "$HILAAS_COMMIT")
+  HILAAS_RUN_ID: $(HOST:printf '%s' "$HILAAS_RUN_ID")
+  HILAAS_RUN_ATTEMPT: $(HOST:printf '%s' "${HILAAS_RUN_ATTEMPT:-1}")
+  HILAAS_MODE: $(HOST:printf '%s' "${HILAAS_MODE:-build}")
+  HILAAS_ENABLE_HARDWARE: $(HOST:printf '%s' "${HILAAS_ENABLE_HARDWARE:-no}")
+  HILAAS_ALLOW_DOWNLOADS: $(HOST:printf '%s' "${HILAAS_ALLOW_DOWNLOADS:-no}")
+  HILAAS_CLIENT_CONFIG: /etc/hilaas/client.json
+  HILAAS_LEDGER_DIR: /var/lib/hilaas-ledger
+  HILAAS_MOCK_SERVER: $(HOST:printf '%s' "${HILAAS_MOCK_SERVER:-http://10.152.183.194:5000}")
+  XDG_CONFIG_HOME: /var/lib/hilaas-auth
+  PATH: /opt/hilaas-client/bin:/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+backends:
+  mock-container:
+    type: adhoc
+    allocate: |
+      set +x
+      response=$(HILAAS_MODE=mock python3 -m hilaas.worker allocate) || FATAL "Mock worker allocation failed"
+      ADDRESS "${response#ADDRESS }"
+    discard: |
+      set +x
+      python3 -m hilaas.worker discard
+    systems:
+      - ubuntu-24.04:
+          workers: 1
+  local-vm:
+    type: adhoc
+    allocate: |
+      set +x
+      response=$(python3 -m hilaas.worker allocate) || FATAL "HILAAS worker allocation failed"
+      ADDRESS "${response#ADDRESS }"
+    discard: |
+      set +x
+      python3 -m hilaas.worker discard
+    systems:
+      - ubuntu-24.04:
+          workers: 1
+suites:
+  spread/:
+    summary: Workshop builds followed by optional Testflinger hardware jobs
+warn-timeout: 5m
+kill-timeout: 50m
