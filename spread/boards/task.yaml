@@ -7,12 +7,12 @@ prepare: |
   export HILAAS_PROGRESS_DIR=/var/lib/hilaas-progress
   test "$HILAAS_ALLOW_DOWNLOADS" = yes || { echo "Explicit SDK/download permission required"; exit 1; }
   test "$(cat /etc/hilaas-spread-template)" = mock-v1
-  test -x /opt/hilaas-client/bin/python
+  python3 -c 'import requests, jwt'
   test -f /opt/hilaas-firmware/manifest.json
 execute: |
   export HILAAS_PROGRESS_DIR=/var/lib/hilaas-progress
   cd /home/ubuntu/HILAAS-Demo
-  /opt/hilaas-client/bin/python -m hilaas.cli run \
+  python3 -m hilaas.cli run \
     --target "$HILAAS_TARGET" --mode "$HILAAS_MODE" \
     --output /home/ubuntu/HILAAS-Demo/spread/boards/results
 artifacts:

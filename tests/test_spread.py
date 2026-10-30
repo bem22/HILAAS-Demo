@@ -111,7 +111,7 @@ class SpreadTests(unittest.TestCase):
         inputs = workflow.get("on", workflow.get(True))["workflow_dispatch"]["inputs"]
         self.assertEqual(inputs["target"]["options"], ["laptop", "esp32c6-devkitc-1", "microbit", "nucleo", "zephyr-all"])
         self.assertFalse(inputs["preliminary_build"]["default"])
-        self.assertEqual(inputs["target"]["default"], "laptop")
+        self.assertEqual(inputs["target"]["default"], "esp32c6-devkitc-1")
         self.assertFalse(inputs["flash_and_test"]["default"])
         self.assertIn("refs/heads/main", job["if"])
         self.assertIn("hilaas-demo", job["runs-on"])

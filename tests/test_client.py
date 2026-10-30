@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from hilaas.bundle import FLASH_FILES, TARGET, digest
 from hilaas import progress
-from hilaas.client import execute, firmware_tests, serial_proof, validate_config, verify_evidence
+from hilaas.client import API, execute, firmware_tests, serial_proof, validate_config, verify_evidence
 from hilaas.showcase import report
 from test_bundle import BundleFixture
 
@@ -49,6 +49,19 @@ class ClientTests(BundleFixture, unittest.TestCase):
         del self.config["allow_trusted_http"]
         with self.assertRaisesRegex(ValueError, "HTTP"):
             validate_config(self.config)
+
+    def test_api_reads_only_configured_submitter_credentials(self):
+        directory = self.directory / "testflinger-cli/testflinger_local"
+        directory.mkdir(parents=True)
+        credentials = directory / "auth.conf"
+        credentials.write_text("[AUTH]\nclient_id=hilaas-demo\nrefresh_token=unit-token\n")
+        with patch.dict(os.environ, XDG_CONFIG_HOME=str(self.directory)):
+            api = API(self.config)
+            self.assertEqual(api.refresh_token, "unit-token")
+            self.assertFalse(api.session.trust_env)
+            credentials.write_text("[AUTH]\nclient_id=other\nrefresh_token=unit-token\n")
+            with self.assertRaisesRegex(ValueError, "Wrong submitter"):
+                API(self.config)
 
     def test_unrestricted_queue_never_submits(self):
         self.api.get_json.side_effect = [{"owners": []}]

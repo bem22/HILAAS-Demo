@@ -1,6 +1,7 @@
 """Single-submit Testflinger client adapter using testflinger-cli authentication."""
 
 import io
+import configparser
 import json
 import os
 import re
@@ -36,22 +37,30 @@ def validate_config(config):
 class API:
     def __init__(self, config):
         import requests
-        from testflinger_cli.auth import TestflingerCliAuth
 
         self.config = validate_config(config)
         self.server = config["server"].rstrip("/")
         require(os.environ.get("XDG_CONFIG_HOME"), "Set a dedicated Testflinger client authentication directory")
-        self.auth = TestflingerCliAuth(self.server)
+        hostname = re.sub(r"([^a-zA-Z0-9_]+)", "_", urlsplit(self.server).hostname)
+        credentials = configparser.ConfigParser()
+        credentials.read(Path(os.environ["XDG_CONFIG_HOME"]) / "testflinger-cli" / hostname / "auth.conf")
+        require(credentials.get("AUTH", "client_id", fallback=None) == config["submitter"], "Wrong submitter credentials")
+        self.refresh_token = credentials.get("AUTH", "refresh_token", fallback=None)
+        require(bool(self.refresh_token), "Testflinger client login required")
         self.session = requests.Session()
         self.session.trust_env = False
 
     def request(self, method, endpoint, **kwargs):
         import jwt
 
-        token = self.auth.authenticate()
+        response = self.session.post(self.server + "/v1/oauth2/refresh",
+                         json={"refresh_token": self.refresh_token}, timeout=(10, 30), allow_redirects=False)
+        require(response.status_code == 200, "Testflinger token refresh failed")
+        token = response.json().get("access_token")
         require(bool(token), "Testflinger client login required")
         permissions = jwt.decode(token, options={"verify_signature": False}).get("permissions", {})
         require(permissions.get("role") == "contributor", "Dedicated contributor credentials required")
+        require(permissions.get("client_id") == self.config["submitter"], "Wrong token owner")
         require(self.config["queue"] in (permissions.get("allowed_queues") or []), "Missing queue permission")
         response = self.session.request(method, self.server + endpoint,
                                         headers={"Authorization": "Bearer " + token},
