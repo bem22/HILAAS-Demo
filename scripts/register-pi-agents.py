@@ -3,11 +3,13 @@
 import argparse
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 
 
 CLIENT_ID = "testflinger-agent"
+SMOKE_SUBMITTER = "hilaas-pi-smoke-submitter"
 QUEUES = (
     "hilaas-esp32c6-pi1",
     "hilaas-microbit-pi1",
@@ -20,12 +22,15 @@ QUEUES = (
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--smoke-submitter", action="store_true")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    os.umask(0o077)
 
     import yaml
     from flask import Flask
     from testflinger import database
-    from testflinger.api.auth import hash_secret, validate_client_key_pair
+    from testflinger.api.auth import generate_refresh_token, hash_secret, validate_client_key_pair
 
     plan = subprocess.run(
         ["/charm/bin/pebble", "plan"], capture_output=True, text=True,
@@ -41,6 +46,30 @@ def main():
         application, uri=database.get_mongo_uri(), serverSelectionTimeoutMS=10000,
     )
     with application.app_context():
+        if args.smoke_submitter:
+            if database.check_client_exists(SMOKE_SUBMITTER):
+                raise ValueError("Smoke submitter already exists; refusing replacement")
+            owners = database.get_restricted_queues_owners()
+            if not all(database.check_queue_restricted(queue)
+                       and set(owners.get(queue, [])) == {CLIENT_ID} for queue in QUEUES):
+                raise ValueError("Unexpected queue ownership; refusing permission changes")
+            if args.check:
+                print(json.dumps({"client_id": SMOKE_SUBMITTER, "queues": QUEUES, "ready": True}))
+                return
+            if args.output is None or args.output.exists():
+                raise ValueError("A fresh private credential output path is required")
+            args.output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with args.output.open("x") as stream:
+                database.create_or_update_client_permissions(SMOKE_SUBMITTER, {
+                    "client_id": SMOKE_SUBMITTER, "role": "contributor",
+                    "allowed_queues": list(QUEUES),
+                    "max_priority": {queue: 0 for queue in QUEUES},
+                    "max_reservation_time": {queue: 0 for queue in QUEUES},
+                })
+                token = generate_refresh_token(SMOKE_SUBMITTER, expires_in=3600)
+                json.dump({"client_id": SMOKE_SUBMITTER, "refresh_token": token}, stream)
+            print("Restricted smoke submitter created; one-hour token saved privately")
+            return
         if database.check_client_exists(CLIENT_ID):
             raise ValueError("Agent login already exists; refusing replacement")
         if any(database.check_queue_restricted(queue) for queue in QUEUES):

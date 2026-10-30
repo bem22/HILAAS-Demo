@@ -27,10 +27,13 @@ flash. The C6 connection is not the UART bridge required by the existing
 hardware adapter below. Do not enable that adapter merely because the chip
 model matches.
 
-These live configurations are **registration only**: setup, provision, and
-test commands are `/bin/false`. Submitted commands are not executed. No
-firmware execution, USB passthrough, or hardware validation is implied by an
-agent appearing online. Board-specific adapters must be reviewed separately.
+These live configurations allow only a **fixed non-flashing smoke test**.
+Setup validates a data-only token and rejects attachments or firmware phases.
+The fixed test checks its source commit, ARM64 execution, and the assigned
+serial node's type and permissions without opening the node. Provision and
+cleanup are no-ops. Submitted commands are never executed. Firmware execution
+and raw USB debugger access remain disabled; board-specific adapters must be
+reviewed separately. An online agent is not proof of working MCU firmware.
 
 `scripts/register-pi-agents.py` runs inside the AWS server workload. Its
 `--check` mode is read-only. Registration accepts the `client-id` and
@@ -71,6 +74,37 @@ own queue, restricted to `testflinger-agent`. Pi 1 uses guests
 `juju-6b2265-0` (C6), `juju-6b2265-1` (micro:bit), and `juju-6b2265-2` (Nucleo).
 Pi 2 uses `juju-e49df4-0` (ESP32) and `juju-e49df4-1` (C3). No firmware job was
 submitted. This is registration evidence, not a hardware test result.
+
+## Non-flashing smoke jobs
+
+Run the server-side registration helper with `--smoke-submitter --check` first,
+then `--smoke-submitter --output <fresh-private-path>` to create
+`hilaas-pi-smoke-submitter`. This contributor can use only the five device queues
+and has no elevated priority or reservation allowance. Its generated refresh
+token expires after one hour. Transfer it privately to the client with mode 600;
+never add it to Git. Queue ownership now includes this contributor and the agent
+login. Existing accounts and unexpected ownership are never overwritten.
+
+Reload each idle unit with its `update-configs` charm action after publishing
+the handler. Then submit one job, using the exact commit loaded in that guest:
+
+```shell
+python -m hilaas.pi_smoke_client \
+   --server http://127.0.0.1:15000 \
+   --token-file "$HOME/.local/state/HILAAS-Demo/pi-agents/smoke-submitter.json" \
+   --agent hilaas-pi2-c3 --run-id pi-smoke-example \
+   --commit "$(git rev-parse HEAD)" \
+   --output artifacts/pi-smoke-example/hilaas-pi2-c3
+```
+
+The client records submission intent before its single POST, checks the queue
+and agent are idle, verifies setup/test/cleanup status, downloads bounded
+artifacts without extracting paths, and requires exact agent/job/nonce/source
+correlation. It also checks the agent returns to waiting. Existing output paths
+block resubmission; timeouts never resubmit or cancel jobs automatically.
+`artifacts/pi-smoke-result.json` explicitly records that no device was opened,
+no flash was written, and no MCU firmware was executed. This validates job
+dispatch and host-side execution, not the MCU's firmware behavior.
 
 ## Prepare one ESP32-C6 agent
 
