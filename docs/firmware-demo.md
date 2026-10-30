@@ -1,6 +1,8 @@
 # Two-Test Firmware Demo
 
-Status: implementation prepared; live flashing verification is pending.
+Status: ESP32-C6 is the selected demo target. Live verification is in progress
+in GitHub Actions run `41091669386`, using source commit
+`09467a3138d90f9e8a93d8b89ad46be87d42ab2c`.
 
 The first hardware target is the ESP32-C6 on Pi 1, connected through its native
 USB Serial/JTAG port. Firmware runs two tests from `firmware/common/selftest.c`:

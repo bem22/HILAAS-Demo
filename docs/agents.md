@@ -77,6 +77,11 @@ submitted. This is registration evidence, not a hardware test result.
 
 ## Non-flashing smoke jobs
 
+The five-agent smoke run below is historical verification. The Pi 1 ESP32-C6
+queue has since been assigned to the [two-test firmware demo](firmware-demo.md)
+and now uses its fixed flashing harness. The other four agents remain smoke-only.
+Do not submit smoke tokens to the C6 firmware queue.
+
 Run the server-side registration helper with `--smoke-submitter --check` first,
 then `--smoke-submitter --output <fresh-private-path>` to create
 `hilaas-pi-smoke-submitter`. This contributor can use only the five device queues

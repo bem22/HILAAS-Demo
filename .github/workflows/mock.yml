@@ -6,7 +6,7 @@ on:
         description: Target adapter (MCU integration requires configured hardware)
         type: choice
         options: [laptop, esp32c6-devkitc-1, microbit, nucleo, zephyr-all]
-        default: laptop
+        default: esp32c6-devkitc-1
       preliminary_build:
         description: Build microbit V2 / NUCLEO-H753ZI, then deliberately fail before Testflinger
         type: boolean
