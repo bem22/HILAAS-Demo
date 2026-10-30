@@ -13,7 +13,9 @@ Its native x86-64 success does not validate a cross-compiler or MCU execution.
 Spread selection: `mock-container:ubuntu-24.04:spread/mock:laptop`.
 The target is `hilaas-laptop-mock`; it has no board, RTOS, or firmware architecture.
 Hardware targets remain in `targets.json`; this independent mock task does not
-enable micro:bit, Nucleo, flashing, or the unfinished nested firmware worker.
+enable micro:bit/Nucleo hardware execution, flashing, or the unfinished nested firmware worker.
+The confirmed micro:bit V2 and NUCLEO-H753ZI have separate preliminary host-Workshop
+build profiles in the consolidated workflow; they never use this laptop task.
 
 Spread's host-side allocation first checks the clean dispatched commit, then
 stages the native recipe and C sources in a fresh, run-specific Workshop project

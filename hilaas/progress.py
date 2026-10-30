@@ -129,9 +129,10 @@ def table(root, run_id, target):
     return "\n".join(lines) + "\n"
 
 
-def run(command, root, target):
+def run(command, root, target, event_targets=None):
     run_id = os.environ["HILAAS_RUN_ID"]
-    if not re.fullmatch(IDENTIFIER, run_id) or not re.fullmatch(IDENTIFIER, target):
+    event_targets = event_targets or [target]
+    if not re.fullmatch(IDENTIFIER, run_id) or not all(re.fullmatch(IDENTIFIER, name) for name in [target, *event_targets]):
         raise ValueError("Invalid run or target identity")
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=False)
@@ -139,7 +140,8 @@ def run(command, root, target):
     environment = dict(os.environ, HILAAS_PROGRESS_DIR=str(root), HILAAS_TARGET=target)
     seen = set()
     def forward():
-        for event in events(root, run_id, target):
+        recorded = [event for name in event_targets for event in events(root, run_id, name)]
+        for event in sorted(recorded, key=lambda event: event["timestamp"]):
             key = (event["operation"], event["status"])
             if key not in seen:
                 render(event)
@@ -158,6 +160,7 @@ def main():
     runner = commands.add_parser("run")
     runner.add_argument("--output", type=Path, required=True)
     runner.add_argument("--target", required=True)
+    runner.add_argument("--event-target", action="append")
     runner.add_argument("command", nargs=argparse.REMAINDER)
     step = commands.add_parser("step")
     step.add_argument("stage", choices=STAGES)
@@ -167,7 +170,7 @@ def main():
     if not command:
         parser.error("A command is required")
     if args.action == "run":
-        return run(command, args.output, args.target)
+        return run(command, args.output, args.target, args.event_target)
     with stage(args.stage):
         subprocess.run(command, check=True)
     return 0

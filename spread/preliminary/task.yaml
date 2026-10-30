@@ -1,0 +1,6 @@
+summary: Build confirmed Zephyr boards and deliberately stop before Testflinger
+backends: [preliminary]
+environment:
+  HILAAS_CHECKPOINT/checkpoint: binary-build
+execute: |
+  FATAL "The preliminary backend must stop before any target execution"

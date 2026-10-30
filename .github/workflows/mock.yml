@@ -5,8 +5,12 @@ on:
       target:
         description: Target adapter (MCU integration requires configured hardware)
         type: choice
-        options: [laptop, esp32c6-devkitc-1]
+        options: [laptop, esp32c6-devkitc-1, microbit, nucleo, zephyr-all]
         default: laptop
+      preliminary_build:
+        description: Build microbit V2 / NUCLEO-H753ZI, then deliberately fail before Testflinger
+        type: boolean
+        default: false
       flash_and_test:
         description: Authorize one physical MCU firmware job
         type: boolean
@@ -18,7 +22,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ${{ inputs.target == 'esp32c6-devkitc-1' && 'hilaas-physical-lab' || 'hilaas-laptop-mock' }}
+  group: ${{ inputs.target == 'laptop' && 'hilaas-laptop-mock' || 'hilaas-physical-lab' }}
   cancel-in-progress: false
 jobs:
   mock:
@@ -30,13 +34,13 @@ jobs:
       HILAAS_RUN_ID: github-${{ github.run_id }}
       HILAAS_COMMIT: ${{ github.sha }}
       HILAAS_TARGET: ${{ inputs.target }}
-      HILAAS_MODE: ${{ inputs.target == 'laptop' && 'mock' || inputs.flash_and_test && 'hardware' || 'build' }}
+      HILAAS_MODE: ${{ inputs.preliminary_build && 'preliminary' || inputs.target == 'laptop' && 'mock' || inputs.flash_and_test && 'hardware' || 'build' }}
       HILAAS_ENABLE_HARDWARE: ${{ inputs.flash_and_test && 'yes' || 'no' }}
       HILAAS_ALLOW_DOWNLOADS: ${{ inputs.allow_downloads && 'yes' || 'no' }}
       HILAAS_WORKER_IMAGE: ${{ vars.HILAAS_WORKER_IMAGE }}
       HILAAS_CLIENT_CONFIG: ${{ vars.HILAAS_CLIENT_CONFIG }}
       HILAAS_AUTH_DIR: ${{ vars.HILAAS_AUTH_DIR }}
-      REPORT_MODE: ${{ inputs.target == 'laptop' && 'native' || inputs.flash_and_test && 'hardware' || 'build' }}
+      REPORT_MODE: ${{ inputs.preliminary_build && 'preliminary' || inputs.target == 'laptop' && 'native' || inputs.flash_and_test && 'hardware' || 'build' }}
       HILAAS_MOCK_WORKER_IMAGE: ${{ vars.HILAAS_MOCK_WORKER_IMAGE || '3c9090e9657b2f4bca98345178c44718c1e0776d0ffe2d230b13a5f0d39b2845' }}
     steps:
       - name: "1. GitHub -> AWS runner: check out exact source"
@@ -46,17 +50,21 @@ jobs:
           persist-credentials: false
       - name: "2. Architecture: show orchestration and downstream boundaries"
         run: python3 -m hilaas.showcase --target "$HILAAS_TARGET" --mode "$REPORT_MODE"
-      - name: "3. Spread: target build -> Testflinger -> target adapter"
+      - name: "3. Spread: target build -> preliminary stop or target execution"
         id: chain
         shell: bash
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          case "$HILAAS_TARGET" in
-            laptop) bash scripts/run-mock-spread.sh ;;
-            esp32c6-devkitc-1) bash scripts/run-spread.sh "$HILAAS_MODE" ;;
-            *) exit 1 ;;
-          esac
+          if [[ "$HILAAS_MODE" == preliminary ]]; then
+            bash scripts/run-preliminary.sh
+          else
+            case "$HILAAS_TARGET" in
+              laptop) bash scripts/run-mock-spread.sh ;;
+              esp32c6-devkitc-1) bash scripts/run-spread.sh "$HILAAS_MODE" ;;
+              *) printf 'This target requires preliminary_build; hardware execution is disabled\n' >&2; exit 1 ;;
+            esac
+          fi
       - name: "4. Evidence: verify target bundle, stage timings, and execution proof"
         if: always()
         env:
@@ -80,5 +88,6 @@ jobs:
             artifacts/github-${{ github.run_id }}/targets/
             artifacts/github-${{ github.run_id }}/progress/
             artifacts/github-${{ github.run_id }}/showcase.md
+            artifacts/github-${{ github.run_id }}/preliminary.json
           if-no-files-found: warn
           retention-days: 14

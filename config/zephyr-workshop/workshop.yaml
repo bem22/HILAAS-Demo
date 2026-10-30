@@ -17,6 +17,14 @@ connections:
   - plug: zephyr:venv
     slot: uv:venv
 actions:
+  build: |-
+    set -eu
+    : "${HILAAS_BOARD:?}" "${HILAAS_COMMIT:?}" "${HILAAS_RUN_ID:?}" "${HILAAS_NONCE:?}"
+    west --version
+    "$ZEPHYR_SDK_INSTALL_DIR/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc" --version
+    west build -p always -b "$HILAAS_BOARD" /project/firmware/zephyr -d /project/build/zephyr -- \
+      -DHILAAS_COMMIT="$HILAAS_COMMIT" -DHILAAS_RUN_ID="$HILAAS_RUN_ID" \
+      -DHILAAS_NONCE="$HILAAS_NONCE" -DHILAAS_BOARD="$HILAAS_BOARD"
   check-tools: |-
     set -eu
     west --version

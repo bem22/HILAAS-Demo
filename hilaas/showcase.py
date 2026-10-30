@@ -41,7 +41,8 @@ flowchart LR
 
 Only the selected target and mode are exercised. Build-only mode never submits a hardware job.
 The laptop is the verified native reference target; ESP32-C6 hardware integration remains unverified.
-micro:bit and Nucleo remain disabled. Offline failure scenarios and the proposed device registry are not live hardware evidence.
+micro:bit V2 and NUCLEO-H753ZI support preliminary builds only; their hardware adapters remain disabled.
+Offline failure scenarios and the proposed device registry are not live hardware evidence.
 """
 
 
@@ -93,6 +94,9 @@ def firmware_evidence(root, target, run_id, commit, mode, config_path):
 
 
 def report(root, run_id, commit, pipeline_outcome, target="laptop", mode="native", config_path=None):
+    if mode == "preliminary":
+        from hilaas.preliminary import report as preliminary_report
+        return preliminary_report(Path(__file__).resolve().parents[1], root, target, commit, run_id, pipeline_outcome)
     lines = ["## Downstream Execution Evidence", "",
              f"Spread orchestration outcome: **{pipeline_outcome}**", ""]
     lines.append(table(root / "progress", run_id, target))
@@ -137,7 +141,7 @@ def main():
     parser.add_argument("--report", type=Path)
     parser.add_argument("--outcome", choices=("success", "failure", "cancelled", "skipped"))
     parser.add_argument("--target", default="laptop")
-    parser.add_argument("--mode", choices=("native", "build", "hardware"), default="native")
+    parser.add_argument("--mode", choices=("native", "build", "hardware", "preliminary"), default="native")
     parser.add_argument("--config", type=Path)
     args = parser.parse_args()
     text, passed = ARCHITECTURE, True

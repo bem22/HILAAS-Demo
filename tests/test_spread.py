@@ -109,7 +109,8 @@ class SpreadTests(unittest.TestCase):
         self.assertEqual(set(workflow.get("on", workflow.get(True))), {"workflow_dispatch"})
         job = workflow["jobs"]["mock"]
         inputs = workflow.get("on", workflow.get(True))["workflow_dispatch"]["inputs"]
-        self.assertEqual(inputs["target"]["options"], ["laptop", "esp32c6-devkitc-1"])
+        self.assertEqual(inputs["target"]["options"], ["laptop", "esp32c6-devkitc-1", "microbit", "nucleo", "zephyr-all"])
+        self.assertFalse(inputs["preliminary_build"]["default"])
         self.assertEqual(inputs["target"]["default"], "laptop")
         self.assertFalse(inputs["flash_and_test"]["default"])
         self.assertIn("refs/heads/main", job["if"])
@@ -321,6 +322,12 @@ class SpreadTests(unittest.TestCase):
         targets = json.loads((ROOT / "targets.json").read_text())
         self.assertFalse(targets["microbit"]["enabled"])
         self.assertFalse(targets["nucleo"]["enabled"])
+        self.assertEqual(targets["microbit"]["board_revisions"], ["v2"])
+        self.assertEqual(targets["microbit"]["board"], "bbc_microbit_v2/nrf52833")
+        self.assertEqual(targets["nucleo"]["board"], "nucleo_h753zi/stm32h753xx")
+        self.assertTrue(targets["microbit"]["build_enabled"])
+        self.assertTrue(targets["nucleo"]["build_enabled"])
+        self.assertIn('west build -p always -b "$HILAAS_BOARD"', configuration["actions"]["build"])
 
     def test_worker_provisioning_requires_matching_virtualization(self):
         with tempfile.TemporaryDirectory() as directory:

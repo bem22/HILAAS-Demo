@@ -17,14 +17,26 @@
   },
   "microbit": {
     "enabled": false,
-    "reason": "V1 and V2 requested; board builds and hardware integration are not yet validated",
-    "board_revisions": ["v1", "v2"],
+    "build_enabled": true,
+    "kind": "mcu",
+    "adapter": "zephyr",
+    "reason": "micro:bit V2 confirmed; preliminary builds only, hardware adapter not implemented",
+    "board_revisions": ["v2"],
+    "board": "bbc_microbit_v2/nrf52833",
+    "workshop": "config/zephyr-workshop",
     "sdk_channel": "26.04/stable",
     "harness": "twister"
   },
   "nucleo": {
     "enabled": false,
-    "reason": "Exact Nucleo model and Zephyr board identifier are not confirmed",
+    "build_enabled": true,
+    "kind": "mcu",
+    "adapter": "zephyr",
+    "pcb": "MB1364E",
+    "model": "NUCLEO-H753ZI",
+    "board": "nucleo_h753zi/stm32h753xx",
+    "workshop": "config/zephyr-workshop",
+    "reason": "NUCLEO-H753ZI confirmed; preliminary builds only, hardware adapter not implemented",
     "sdk_channel": "26.04/stable",
     "harness": "twister"
   }

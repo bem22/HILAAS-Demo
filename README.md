@@ -16,6 +16,24 @@ selection does not imply its hardware integration has been validated. MCU mode
 defaults to build-only. SDK downloads and physical flashing require separate
 explicit permissions and the existing configured worker/device prerequisites.
 
+For a preliminary Zephyr build, select `microbit`, `nucleo`, or `zephyr-all`,
+enable `preliminary_build` and `allow_downloads`, and leave `flash_and_test`
+off. `microbit` means **micro:bit V2 / nRF52833**; `nucleo` means
+**NUCLEO-H753ZI / STM32H753**, PCB marking MB1364E. `zephyr-all` builds both.
+Each target gets a fresh host Workshop from the shared Zephyr/ARM recipe;
+Spread does not allocate a submitter worker or contact Testflinger in this mode.
+Both builds use the portable self-test application and embed commit, run, board,
+and nonce identities. Building the self-test does not mean it ran on hardware.
+
+After all ELF/HEX/BIN files are validated and Workshops stopped, Spread fails
+deliberately with `PRELIMINARY_BUILD_COMPLETE` and a message that the Testflinger
+handoff was blocked. The workflow is intentionally red. Its evidence step must
+still pass and its artifact must contain `preliminary.json`, both target bundles,
+Workshop logs, and the report. An SDK/compiler failure or missing binary is
+reported as **BUILD INCOMPLETE**, not as the expected stop. No credentials or
+available Testflinger server are needed. Do not enable hardware until separate
+identity, flashing, and runtime-proof adapters have been implemented.
+
 Both paths use the same stage recorder and GitHub log renderer. Open the Spread
 step for live collapsible transitions: Workshop launch/build, bundle validation,
 worker allocation/tests, Testflinger preflight/submission/attachments/wait/evidence,
@@ -35,7 +53,7 @@ the laptop; firmware manifest, partition policy, device MAC, flash count, and
 serial nonce/sequence proof for ESP32-C6. A build-only report explicitly says
 hardware execution was not run. Adding another MCU requires an implemented
 build/device/evidence adapter, not merely a new target name. micro:bit and Nucleo
-remain disabled. The device registry remains a proposal.
+remain hardware-disabled but have confirmed preliminary build profiles. The device registry remains a proposal.
 
 Current MCU blockers are unchanged: the nested Workshop worker path has not
 been validated, the queue-owner contract needs reconciliation with the deployed
@@ -56,8 +74,8 @@ does not grant new device permissions or bypass those guards.
   not claim that a C6 build, VM allocation, or physical flash has succeeded.
 - Runtime prerequisites: install Spread, prepare a worker image, register a
   runner for this repository, and configure a reachable server and Pi agent.
-- micro:bit and Nucleo are deliberately disabled in `targets.json` until exact
-  boards are identified. Their Twister adapter is not implemented yet.
+- micro:bit V2 and NUCLEO-H753ZI have build-only profiles in `targets.json`.
+  Hardware execution remains disabled; their Twister/device adapters are not implemented yet.
 
 The existing S3 workflow and runner registration are independent and unchanged.
 Do not use an S3 binary, MAC, flash configuration, or queue for the C6.

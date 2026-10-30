@@ -29,6 +29,17 @@ environment:
   XDG_CONFIG_HOME: /var/lib/hilaas-auth
   PATH: /opt/hilaas-client/bin:/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 backends:
+  preliminary:
+    type: adhoc
+    allocate: |
+      set +x
+      python3 -m hilaas.preliminary || FATAL "Preliminary build failed before the binary checkpoint; inspect Workshop logs"
+      FATAL "PRELIMINARY_BUILD_COMPLETE: binaries verified; Testflinger handoff deliberately blocked. No job submitted or device flashed."
+    discard: |
+      true
+    systems:
+      - ubuntu-26.04:
+          workers: 1
   mock-container:
     type: adhoc
     allocate: |
