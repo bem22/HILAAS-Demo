@@ -14,6 +14,37 @@ from hilaas.native import build as build_native, validate as validate_native, ve
 
 
 class MockAgentTests(unittest.TestCase):
+    def test_native_process_failure_never_reports_pass(self):
+        import hashlib
+        for failure in (subprocess.CompletedProcess([], 1), subprocess.TimeoutExpired("demo", 20)):
+            with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                bundle = root / "attachments/test"
+                bundle.mkdir(parents=True)
+                binary = bytearray(64)
+                binary[:7] = b"\x7fELF\x02\x01\x01"
+                binary[18:20] = b"\x3e\x00"
+                manifest = {"kind": "native", "architecture": "x86_64", "commit": "a" * 40,
+                            "run_id": "run-1", "nonce": "b" * 32, "build_system": "workshop",
+                            "binary_sha256": hashlib.sha256(binary).hexdigest()}
+                (bundle / "hilaas-selftest").write_bytes(binary)
+                (bundle / "native-manifest.json").write_text(json.dumps(manifest))
+                payload = self.job()
+                payload.update(name="run-1", tags=[manifest["nonce"], manifest["binary_sha256"], manifest["commit"]],
+                               test_data={"test_cmds": "HILAAS_NATIVE_V1", "attachments": [
+                                   {"agent": "hilaas-selftest"}, {"agent": "native-manifest.json"}]})
+                (root / "testflinger.json").write_text(json.dumps(payload))
+                with patch("hilaas.mock_agent.subprocess.run") as process:
+                    if isinstance(failure, Exception):
+                        process.side_effect = failure
+                    else:
+                        process.return_value = failure
+                    with self.assertRaises((ValueError, subprocess.TimeoutExpired)):
+                        execute(root / "testflinger.json", root / "artifacts")
+                    process.assert_called_once()
+                    self.assertEqual(process.call_args.kwargs["timeout"], 20)
+                self.assertFalse((root / "artifacts/mock-result.json").exists())
+
     @unittest.skipUnless(shutil.which("cc") and shutil.which("bwrap"), "Native compiler and Bubblewrap required")
     def test_real_native_binary_runs_in_sandbox(self):
         import hashlib

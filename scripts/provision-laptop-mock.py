@@ -62,6 +62,7 @@ After=hilaas-mock-tunnel.service
 StartLimitIntervalSec=0
 
 [Service]
+ExecStartPre=/usr/bin/curl --fail --silent --show-error --noproxy * --connect-timeout 3 --max-time 10 --output /dev/null http://127.0.0.1:15000/v1/agents/queues
 ExecStart=%h/.local/state/HILAAS-Demo/mock/venv/bin/testflinger-agent -c %h/.local/state/HILAAS-Demo/mock/agent.json --token-file %h/.local/state/HILAAS-Demo/mock/agent-token.json
 WorkingDirectory=%h/.local/state/HILAAS-Demo/mock
 Environment=NO_PROXY=127.0.0.1,localhost

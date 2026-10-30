@@ -100,7 +100,12 @@ systemctl --user status hilaas-mock-tunnel.service hilaas-mock-agent.service
 If the agent starts before its tunnel is usable, its current Testflinger
 client can cache a failed token refresh. After checking the tunnel is ready,
 restart only `hilaas-mock-agent.service`. The server must report the agent as
-`waiting` before another run. No automatic readiness fix is installed yet.
+`waiting` before another run, and recent agent logs must show successful polling
+without authorization errors; cached registration alone is insufficient.
+The generated and installed laptop service now checks the tunneled API with
+`curl` before starting the agent. If it is unavailable, the service's restart
+policy retries after ten seconds. This prevents startup against an unavailable
+tunnel but does not replace credential validation or fix upstream token caching.
 
 ## Evidence and recovery
 

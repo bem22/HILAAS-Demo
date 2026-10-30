@@ -44,6 +44,10 @@ Optional dependencies are declared in `pyproject.toml`. Installing
 The client uses `testflinger-cli` authentication with a no-retry requests
 transport. Its compatibility must be checked when updating the client package.
 
+For named offline failure demonstrations, supervised USB drills, and a proposed
+agent-independent device registry, see [the demo runbook](docs/demo-scenarios.md).
+Run `python scripts/demo-scenarios.py --list` to see the prepared scenarios.
+
 ## Portable binary self-test
 
 `firmware/common/selftest.c` is the same SDK-independent C test on the laptop

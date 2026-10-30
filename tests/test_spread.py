@@ -4,6 +4,7 @@ import runpy
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as element_tree
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -16,6 +17,49 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SpreadTests(unittest.TestCase):
+    def test_laptop_service_checks_tunnel_readiness_before_start(self):
+        provisioner = runpy.run_path(str(ROOT / "scripts/provision-laptop-mock.py"))
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            state = home / ".local/state/HILAAS-Demo/mock"
+            (state / "venv/bin").mkdir(parents=True)
+            (state / "venv/bin/testflinger-agent").touch()
+            (state / "agent-token.json").write_text("{}")
+            with (
+                patch("pathlib.Path.home", return_value=home),
+                patch("os.getuid", return_value=1000),
+                patch("os.umask"),
+                patch("sys.argv", ["provision-laptop-mock.py", "--server-ip", "10.152.183.194"]),
+            ):
+                provisioner["main"]()
+            unit = (home / ".config/systemd/user/hilaas-mock-agent.service").read_text()
+            self.assertIn("ExecStartPre=/usr/bin/curl --fail", unit)
+            self.assertIn("--max-time 10 --output /dev/null http://127.0.0.1:15000/v1/agents/queues", unit)
+            self.assertIn("Restart=always", unit)
+            self.assertIn("RestartSec=10", unit)
+
+    def test_demo_scenario_does_not_count_skips_as_success(self):
+        runner = runpy.run_path(str(ROOT / "scripts/demo-scenarios.py"))
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            suites = element_tree.Element("testsuites")
+            suite = element_tree.SubElement(suites, "testsuite")
+            case = element_tree.SubElement(suite, "testcase")
+            element_tree.SubElement(case, "skipped")
+            element_tree.ElementTree(suites).write(output / "usb-missing.xml")
+            with patch("subprocess.run", return_value=Mock(returncode=0, stdout="Dependency missing\n")) as process:
+                result = runner["run_scenario"]("usb-missing", output)
+            self.assertEqual(result["status"], "incomplete")
+            self.assertEqual(result["skipped"], 1)
+            self.assertIn("tests/test_device.py::DeviceTests::test_missing_usb_port_blocks_device_access", process.call_args.args[0])
+            self.assertEqual(process.call_args.kwargs["env"]["PYTEST_DISABLE_PLUGIN_AUTOLOAD"], "1")
+
+    def test_demo_scenario_requires_a_test_report(self):
+        runner = runpy.run_path(str(ROOT / "scripts/demo-scenarios.py"))
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", return_value=Mock(returncode=0, stdout="")):
+            result = runner["run_scenario"]("usb-missing", Path(directory))
+        self.assertEqual(result["status"], "failed")
+
     def test_mock_workflow_is_manual_and_checks_out_exact_source(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/mock.yml").read_text())
         self.assertEqual(set(workflow.get("on", workflow.get(True))), {"workflow_dispatch"})
