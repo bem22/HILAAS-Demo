@@ -1,4 +1,4 @@
-name: HILAAS Workshop laptop binary
+name: HILAAS source-to-laptop architecture showcase
 on:
   workflow_dispatch:
 permissions:
@@ -8,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   mock:
+    name: GitHub -> AWS -> Spread -> Workshop -> Testflinger -> Laptop
     if: github.repository == 'bem22/HILAAS-Demo' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64, hilaas-demo]
     timeout-minutes: 30
@@ -16,18 +17,26 @@ jobs:
       HILAAS_COMMIT: ${{ github.sha }}
       HILAAS_MOCK_WORKER_IMAGE: ${{ vars.HILAAS_MOCK_WORKER_IMAGE || '3c9090e9657b2f4bca98345178c44718c1e0776d0ffe2d230b13a5f0d39b2845' }}
     steps:
-      - name: Check out the dispatched source
+      - name: "1. GitHub -> AWS runner: check out exact source"
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Build in Workshop and execute on laptop through Spread and Testflinger
+      - name: "2. Architecture: show orchestration and downstream boundaries"
+        run: python3 -m hilaas.showcase
+      - name: "3. Spread: Workshop build -> worker -> Testflinger -> laptop"
+        id: chain
         shell: bash
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
           bash scripts/run-mock-spread.sh
-      - name: Upload Workshop binary and laptop execution evidence
+      - name: "4. Evidence: verify source -> binary -> Testflinger job -> laptop proof"
+        if: always()
+        env:
+          PIPELINE_OUTCOME: ${{ steps.chain.outcome }}
+        run: python3 -m hilaas.showcase --report "artifacts/$HILAAS_RUN_ID" --outcome "$PIPELINE_OUTCOME"
+      - name: "5. Publish: architecture report, Workshop binary, and laptop evidence"
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -35,5 +44,6 @@ jobs:
           path: |
             artifacts/github-${{ github.run_id }}/build/
             artifacts/github-${{ github.run_id }}/laptop/
+            artifacts/github-${{ github.run_id }}/showcase.md
           if-no-files-found: warn
           retention-days: 14

@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import yaml
 
-from hilaas import worker
+from hilaas import showcase, worker
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,7 +71,47 @@ class SpreadTests(unittest.TestCase):
         self.assertRegex(checkout["uses"], r"^actions/checkout@[0-9a-f]{40}$")
         self.assertFalse(checkout["with"]["persist-credentials"])
         self.assertEqual(checkout["with"]["ref"], "${{ github.sha }}")
-        self.assertIn("bash scripts/run-mock-spread.sh", job["steps"][1]["run"])
+        chain = next(step for step in job["steps"] if step.get("id") == "chain")
+        self.assertIn("bash scripts/run-mock-spread.sh", chain["run"])
+        report_step = next(step for step in job["steps"] if "--report" in step.get("run", ""))
+        self.assertEqual(report_step["if"], "always()")
+        self.assertEqual(report_step["env"]["PIPELINE_OUTCOME"], "${{ steps.chain.outcome }}")
+        self.assertIn("/showcase.md", job["steps"][-1]["with"]["path"])
+
+    def test_showcase_missing_evidence_is_not_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            text, passed = showcase.report(Path(directory), "run", "a" * 40, "success")
+        self.assertFalse(passed)
+        self.assertIn("INCOMPLETE", text)
+
+    def test_showcase_failed_orchestration_does_not_claim_success(self):
+        with patch.object(showcase, "validate") as validate:
+            text, passed = showcase.report(Path("unused"), "run", "a" * 40, "failure")
+        validate.assert_not_called()
+        self.assertFalse(passed)
+        self.assertIn("Do not resubmit automatically", text)
+
+    def test_showcase_requires_matching_build_and_laptop_identity(self):
+        manifest = {"run_id": "run", "commit": "a" * 40, "nonce": "b" * 32,
+                    "binary_sha256": "c" * 64}
+        receipt = dict(manifest, kind="native", stage="complete", status="pass")
+        proof = {"job_id": "test-job", "agent": "hilaas-laptop-mock", "checks": 5, "exit_code": 0}
+        with (
+            patch.object(showcase, "validate", return_value=(manifest, {})),
+            patch.object(showcase, "read_json", side_effect=lambda path: receipt if path.name == "receipt.json" else {}),
+            patch.object(showcase, "verify_evidence", return_value=proof) as verify,
+        ):
+            text, passed = showcase.report(Path("unused"), "run", "a" * 40, "success")
+            self.assertTrue(passed)
+            self.assertIn("test-job", text)
+            self.assertIn("0 / 0 / 0", text)
+            verify.assert_called_once()
+            for field in ("commit", "run_id", "nonce", "binary_sha256"):
+                with self.subTest(field=field), patch.dict(receipt, {field: "mismatch"}):
+                    verify.reset_mock()
+                    text, passed = showcase.report(Path("unused"), "run", "a" * 40, "success")
+                    self.assertFalse(passed)
+                    verify.assert_not_called()
 
     def test_mock_is_separate_from_hardware_backend(self):
         project = yaml.safe_load((ROOT / "spread.yaml").read_text())

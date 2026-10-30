@@ -87,9 +87,19 @@ The script forces mock mode and disables hardware. Dirty or uncommitted
 staged-source builds are rejected. The GitHub workflow checks out the exact
 dispatched commit and uses `github-<run-id>` as the run identity.
 Publish `.github/workflows/mock.yml` and the project to `main`, then manually
-dispatch **HILAAS Workshop laptop binary**. It uses the registered `hilaas-demo` runner;
+dispatch **HILAAS source-to-laptop architecture showcase**. It uses the registered `hilaas-demo` runner;
 no pull-request or push trigger is enabled. The optional repository variable
 `HILAAS_MOCK_WORKER_IMAGE` overrides the pinned deployment fingerprint.
+
+The run Summary shows an architecture diagram and a boundary/responsibility table.
+Numbered steps distinguish source checkout, architecture, Spread orchestration,
+independent downstream evidence verification, and artifact publication. Workshop
+and Testflinger remain controlled by Spread; they are not separate GitHub jobs.
+The evidence step checks the binary digest, source/run/nonce identities, all
+Testflinger phase results, and the laptop proof again on the runner. Missing or
+mismatched evidence produces an incomplete report and a failed verification step,
+not a success badge. The summary explicitly distinguishes this real native run
+from offline negative scenarios, MCU flashing, and the proposed device registry.
 
 Keep the laptop awake with its user services running:
 
@@ -132,6 +142,9 @@ Evidence is under `artifacts/<run-id>/mock-container:ubuntu-24.04:spread/mock:la
 results to the colon-free `artifacts/<run-id>/laptop/` directory. GitHub uploads
 that directory together with `artifacts/<run-id>/build/`, including Workshop
 logs and the exact executable/manifest, as `native-<github-run-id>-<attempt>`.
+The same artifact includes `showcase.md`, a portable architecture and verification
+report. Artifact publication has its own outcome; a passing evidence report does
+not by itself prove that the upload succeeded.
 
 The durable submission ledger is `~/.local/state/HILAAS-Demo/mock-submissions/`
 on AWS. Container-created private ledger files may require administrator
