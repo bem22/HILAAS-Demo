@@ -106,6 +106,28 @@ block resubmission; timeouts never resubmit or cancel jobs automatically.
 no flash was written, and no MCU firmware was executed. This validates job
 dispatch and host-side execution, not the MCU's firmware behavior.
 
+### Verified smoke run
+
+Run `pi-smoke-47057a6` passed on all five agents on 2026-10-30, using source
+commit `47057a616e7a8f2d356ff2f98136f70de84a73f3` in every guest. Exactly one job
+was submitted per agent, with no retries. Setup, test, and cleanup succeeded;
+each correlated artifact passed verification and each agent returned to waiting.
+
+| Agent | Testflinger job | Result |
+| --- | --- | --- |
+| `hilaas-pi1-c6` | `318dfc7b-485a-4878-bfa6-226baf3f067a` | Passed |
+| `hilaas-pi1-microbit` | `2fc44d13-9dd1-4e6f-8b3f-77c3eb5801c7` | Passed |
+| `hilaas-pi1-nucleo` | `1566af38-6aba-468c-8041-b6583e6fa4c0` | Passed |
+| `hilaas-pi2-esp32` | `7726f1d1-4255-4d56-a0e3-1cd3c30dde35` | Passed |
+| `hilaas-pi2-c3` | `6d0c28d1-cf6a-482f-81cc-46f74eeb2bbc` | Passed |
+
+Local receipts, phase results, archives, and verified proof are retained under
+`artifacts/pi-smoke-47057a6/<agent>/`. No serial device was opened, no firmware
+was flashed, and no MCU firmware was executed by these jobs. This run does not
+validate the GitHub runner/Spread/Workshop build path or MCU serial communication.
+The temporary contributor token expires after one hour; agent credentials are
+unchanged. Guests remain on the tested source commit until the next refresh.
+
 ## Prepare one ESP32-C6 agent
 
 1. Install a reviewed, pinned copy of this repository at `/opt/hilaas-demo` in
