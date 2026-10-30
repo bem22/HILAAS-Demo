@@ -39,17 +39,38 @@ agent role and exactly these five queues, and restricts those queues. It
 refuses existing accounts or restrictions rather than replacing them. It
 does not manufacture agent heartbeat records or grant contributor access.
 
+Each guest receives only its own stable serial interface at `/dev/hilaas-mcu`,
+with access limited to the `dialout` group. Raw USB debug interfaces are not
+passed through by this registration setup.
+
 Each guest needs its own root-readable SSH tunnel key and the pinned AWS host
 key at `/etc/hilaas/known_hosts`. Install the service from
 `config/pi-agents/hilaas-api-tunnel.service`; it binds only guest loopback and
-forwards to the private API over SSH. Limit each public key on AWS to API port
+forwards to the private API over SSH. Install `supervisor-api.conf` as
+`/etc/systemd/system/supervisor.service.d/hilaas-api.conf` so Supervisor starts
+after the tunnel's API-readiness check. Limit each public key on AWS to API port
 forwarding; do not copy the AWS administrator private key into the guests.
 The public browser OAuth endpoint is not an agent API endpoint.
+
+The user made `https://github.com/bem22/HILAAS-Demo.git` public for these
+configuration clones. Keep that HTTPS URL as `config-repo`; no GitHub token or
+deploy key is installed in the guests. Verify anonymous `git ls-remote` from a
+guest before activation. If cloning failed before access was available, use
+the charm's `update-configs` action after fixing access. A successful action
+return or later active status can mask an earlier clone failure, so confirm
+that the expected Supervisor process and server heartbeat actually exist.
 
 Grant the credentials through a model-owned Juju secret, never Git. Start the
 tunnel before authentication. Once authentication succeeds, restart an idle
 agent if it cached a failed initial token refresh. Verify real heartbeat
 records and restricted queue ownership, not only Supervisor or Juju status.
+
+On 2026-10-30 all five applications reached active/idle, all five Supervisor
+processes were running, and the AWS API reported each agent as waiting on its
+own queue, restricted to `testflinger-agent`. Pi 1 uses guests
+`juju-6b2265-0` (C6), `juju-6b2265-1` (micro:bit), and `juju-6b2265-2` (Nucleo).
+Pi 2 uses `juju-e49df4-0` (ESP32) and `juju-e49df4-1` (C3). No firmware job was
+submitted. This is registration evidence, not a hardware test result.
 
 ## Prepare one ESP32-C6 agent
 

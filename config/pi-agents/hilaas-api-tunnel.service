@@ -7,6 +7,8 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 ExecStart=/usr/bin/ssh -NT -i /etc/hilaas/tunnel_key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/hilaas/known_hosts -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -L 127.0.0.1:15000:10.152.183.194:5000 ubuntu@ec2-16-16-193-47.eu-north-1.compute.amazonaws.com
+ExecStartPost=/usr/bin/curl --noproxy * --fail --silent --show-error --retry 8 --retry-connrefused --retry-max-time 60 --connect-timeout 5 --max-time 10 --output /dev/null http://127.0.0.1:15000/v1/agents/queues
+TimeoutStartSec=90
 Restart=always
 RestartSec=5
 UMask=0077
