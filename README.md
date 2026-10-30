@@ -12,8 +12,9 @@ hosts; they remain managed by their own Juju controllers.
 
 - Laptop binary: the manual workflow connects GitHub -> runner -> Spread ->
   Workshop -> Testflinger -> laptop, executing the received native ELF in a
-  sandbox. Local execution and a direct AWS Workshop build passed; full workflow
-  verification is pending. See [laptop pipeline](docs/mock.md).
+  sandbox. The full workflow and artifact upload passed on 2026-10-30 in
+  [run 41026852865](https://github.com/bem22/HILAAS-Demo/actions/runs/41026852865).
+  See [laptop pipeline](docs/mock.md) for verified binary and job identities.
 - Implemented: ESP32-C6 DevKitC-1 ESP-IDF build recipe and proof firmware,
   immutable firmware bundle, Spread task and local disposable-VM backend,
   guarded Testflinger client adapter, and host-controlled pytest agent adapter.

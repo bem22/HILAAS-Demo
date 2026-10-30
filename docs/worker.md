@@ -361,3 +361,20 @@ from Spread and delivers its executable through Testflinger; see the
 The old staged binary is not reused by that workflow. No new Testflinger job
 or hardware operation was performed during this checkpoint; ESP-IDF and
 Zephyr cross-builds remain unverified.
+
+## Public ingress recovery
+
+On 2026-10-30, public HTTPS timed out although the private API returned 200
+and the current ingress pod returned the expected GitHub login redirect.
+Four stale legacy-iptables CNI host-port jumps preceded the active ingress
+rule, sending ports 80/443 to obsolete pod addresses. Removing only those
+four stale jumps restored external access without restarting applications or
+changing AWS rules, TLS, or the GitHub allowlist.
+
+The pre-change NAT snapshot is private on AWS at
+`~/.local/state/HILAAS-Demo/ingress-recovery-20261030.iptables` (root-owned).
+Do not restore it wholesale: it contains stale rules and other dynamic NAT
+state. External checks verified HTTP-to-HTTPS 308, valid TLS, GitHub login 302,
+and unauthenticated `/oauth2/auth` 401. The cause of the orphaned CNI rules
+has not been established; compare current pod addresses and host-port rules
+if the failure recurs after networking or sandbox restarts.

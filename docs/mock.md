@@ -109,7 +109,17 @@ Spread ran the source tests, submitted one accepted mock job, retrieved the
 proof and phase logs, and deleted its worker. The preceding attempts failed
 preflight/schema checks; they did not execute on the laptop.
 That historical run validates transport only, not a binary build or the full
-GitHub-triggered binary workflow. Full binary workflow verification is pending.
+GitHub-triggered binary workflow.
+
+The complete binary workflow passed on 2026-10-30 in
+[GitHub run 41026852865](https://github.com/bem22/HILAAS-Demo/actions/runs/41026852865):
+
+- Source commit: `a2ca4c4d48dbbc11c1f37d8539d1ea8ac4b1c918`.
+- Testflinger job: `4b67376d-aba8-4ee2-8df2-a793e1c69c74`, assigned to `hilaas-laptop-mock`.
+- Binary SHA-256: `56f319e860f7ebcd5ce58236840b8d4a15bb96fd8d85ba7ded66ee12b4a235f4`.
+- Workshop compilation and CTest passed; laptop setup, test, and cleanup returned zero.
+- The downloaded GitHub artifact contained the same ELF digest and matching runtime commit/run/nonce, exit zero, and five passing checks.
+- Artifact upload succeeded as `native-41026852865-1`; no hardware or flashing was involved.
 
 Evidence is under `artifacts/<run-id>/mock-container:ubuntu-24.04:spread/mock:laptop/results/`:
 `receipt.json`, `phase-results.json`, `mock-result.json`, and `artifacts.tar.gz`.
