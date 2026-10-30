@@ -48,7 +48,7 @@ def assigned_device():
 def test_flash_and_serial_proof(assigned_device):
     config, manifest, manifest_bytes, port, private, output = assigned_device
     base = [sys.executable, "-m", "esptool", "--chip", "esp32c6", "--port", port,
-            "--baud", "115200", "--before", "default_reset", "--after", "hard_reset", "--no-stub"]
+            "--baud", "115200", "--before", "usb_reset", "--after", "hard_reset", "--no-stub"]
 
     def tool(arguments):
         result = subprocess.run(base + arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -59,7 +59,8 @@ def test_flash_and_serial_proof(assigned_device):
         return result.stdout.decode(errors="replace")
 
     identity = tool(["read_mac"])
-    matches = re.findall(r"MAC:\s*((?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})", identity)
+    matches = re.findall(r"^(?:BASE )?MAC:\s*((?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})\s*$",
+                         identity, re.MULTILINE)
     require(matches and {value.lower() for value in matches} == {config["device_mac"]}, "Physical device identity mismatch")
     files = []
     for filename, offset in FLASH_FILES.items():

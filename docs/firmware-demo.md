@@ -1,8 +1,15 @@
 # Two-Test Firmware Demo
 
-Status: ESP32-C6 is the selected demo target. Live verification is in progress
-in GitHub Actions run `41091669386`, using source commit
-`09467a3138d90f9e8a93d8b89ad46be87d42ab2c`.
+Status: ESP32-C6 is the selected demo target; a complete hardware pass is still
+pending. GitHub Actions run `41092675994` built successfully, but its CRC32 job
+`02f2234d-4a72-49c3-b344-f9fbb6911521` stopped at the MAC probe before any flash
+write. The native-USB reset selection has been corrected and a MAC-only probe
+matched the approved board. Parsing now distinguishes its six-byte base MAC
+from its eight-byte MAC display. The second test was not submitted.
+
+The earlier run `41091669386` built successfully but stopped in worker
+preparation before submitting any hardware job; its Python-path mismatch has
+also been corrected.
 
 The first hardware target is the ESP32-C6 on Pi 1, connected through its native
 USB Serial/JTAG port. Firmware runs two tests from `firmware/common/selftest.c`:

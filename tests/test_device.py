@@ -101,6 +101,8 @@ class DeviceTests(BundleFixture, unittest.TestCase):
                 harness["test_flash_and_serial_proof"](assigned)
             tool.assert_called_once()
             self.assertIn("read_mac", tool.call_args.args[0])
+            command = tool.call_args.args[0]
+            self.assertEqual(command[command.index("--before") + 1], "usb_reset")
             port.assert_not_called()
         self.assertFalse((output / "proof.json").exists())
 
@@ -109,7 +111,7 @@ class DeviceTests(BundleFixture, unittest.TestCase):
         output = self.directory / "evidence"
         output.mkdir()
         assigned = (self.config, self.manifest, b"", "/dev/hilaas-demo-not-a-device", self.directory, output)
-        responses = [subprocess.CompletedProcess([], 0, stdout=b"MAC: 01:23:45:67:89:ab\n"),
+        responses = [subprocess.CompletedProcess([], 0, stdout=b"MAC: 01:23:45:ff:fe:67:89:ab\nBASE MAC: 01:23:45:67:89:ab\nMAC_EXT: ff:fe\n"),
                      subprocess.CompletedProcess([], 1, stdout=b"Simulated USB disconnect during write\n")]
         with patch("subprocess.run", side_effect=responses) as tool, patch("serial.Serial") as port:
             with self.assertRaisesRegex(ValueError, "esptool failed"):
